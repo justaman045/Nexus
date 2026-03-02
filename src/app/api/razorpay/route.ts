@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
         // Create options
         const options = {
-            amount: (amount * 100).toString(), // Amount in smallest currency unit
+            amount: Math.round(amount * 100).toString(), // Amount in smallest currency unit, rounded to avoid float issues
             currency,
             receipt: shortid.generate(),
         };

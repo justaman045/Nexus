@@ -15,13 +15,22 @@ export default function ProductsPage() {
 
     // Currency State
     const [currency, setCurrency] = useState<"USD" | "INR">("USD");
-    const EXCHANGE_RATE = 85;
+    const [exchangeRate, setExchangeRate] = useState<number>(90);
 
     useEffect(() => {
         const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (userTimezone === "Asia/Kolkata" || userTimezone === "Asia/Calcutta" || userTimezone.includes("India")) {
             setCurrency("INR");
         }
+
+        fetch("https://open.er-api.com/v6/latest/USD")
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.rates && data.rates.INR) {
+                    setExchangeRate(data.rates.INR);
+                }
+            })
+            .catch(err => console.error("Failed to fetch live exchange rate", err));
     }, []);
 
     useEffect(() => {
@@ -121,7 +130,7 @@ export default function ProductsPage() {
 
                                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/10">
                                     <span className="text-lg font-bold text-white">
-                                        {currency === "USD" ? "$" : "₹"}{(currency === "USD" ? product.price : product.price * EXCHANGE_RATE).toLocaleString()}
+                                        {currency === "USD" ? "$" : "₹"}{(currency === "USD" ? product.price : product.price * exchangeRate).toLocaleString()}
                                     </span>
                                     <div className="flex gap-3">
                                         <Link href={`/products/${product.id}`} className="text-blue-400 hover:text-blue-300 text-sm font-medium flex items-center gap-1 transition-colors">

@@ -26,7 +26,19 @@ export default function Home() {
           timeoutPromise
         ]) as [HomepageContent, Product[]];
 
-        if (cmsData) setContent(cmsData);
+        let newContent = cmsData || defaultContent;
+        if (productsData) {
+          const totalPurchases = productsData.reduce((acc, p) => acc + (p.purchases || 0), 0);
+          newContent = {
+            ...newContent,
+            stats: newContent.stats.map(stat =>
+              stat.label.toLowerCase() === "downloads" && totalPurchases > 1000
+                ? { ...stat, value: totalPurchases.toLocaleString() + "+" }
+                : stat
+            )
+          };
+        }
+        setContent(newContent);
         setProducts(productsData.slice(0, 3));
       } catch (error) {
         console.error("Data fetch failed or timed out, using defaults:", error);

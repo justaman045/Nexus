@@ -16,13 +16,22 @@ export default function AdminProducts() {
 
     // Currency State
     const [currency, setCurrency] = useState<"USD" | "INR">("USD");
-    const EXCHANGE_RATE = 85;
+    const [exchangeRate, setExchangeRate] = useState<number>(90);
 
     useEffect(() => {
         const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (userTimezone === "Asia/Kolkata" || userTimezone === "Asia/Calcutta" || userTimezone.includes("India")) {
             setCurrency("INR");
         }
+
+        fetch("https://open.er-api.com/v6/latest/USD")
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.rates && data.rates.INR) {
+                    setExchangeRate(data.rates.INR);
+                }
+            })
+            .catch(err => console.error("Failed to fetch live exchange rate", err));
     }, []);
 
     useEffect(() => {
@@ -77,12 +86,17 @@ export default function AdminProducts() {
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            const productToSave = {
+                ...currentProduct,
+                features: currentProduct.features?.map(f => f.trim()).filter(Boolean) || []
+            };
+
             if (currentProduct.id) {
-                await updateProduct(currentProduct.id, currentProduct);
+                await updateProduct(currentProduct.id, productToSave);
             } else {
                 // Remove id, purchases, createdAt from currentProduct before passing if they exist (though they shouldn't for new)
                 // We cast to any to bypass strict checks here, relying on the function to handle omitted fields
-                const { id, purchases, createdAt, ...newProductData } = currentProduct as any;
+                const { id, purchases, createdAt, ...newProductData } = productToSave as any;
                 await addProduct(newProductData);
             }
             setIsModalOpen(false);
@@ -136,7 +150,7 @@ export default function AdminProducts() {
                         <tr className="border-b border-white/10 bg-white/5">
                             <th className="p-6 text-sm font-semibold text-gray-400">Product Name</th>
                             <th className="p-6 text-sm font-semibold text-gray-400">Category</th>
-                            <th className="p-6 text-sm font-semibold text-gray-400">Purchases</th>
+                            <th className="p-6 text-sm font-semibold text-gray-400">Downloads/Purchases</th>
                             <th className="p-6 text-sm font-semibold text-gray-400">Price</th>
                             <th className="p-6 text-sm font-semibold text-gray-400 text-right">Actions</th>
                         </tr>
@@ -154,13 +168,13 @@ export default function AdminProducts() {
                                         <div className="text-sm text-gray-500 line-clamp-1">{product.description}</div>
                                     </td>
                                     <td className="p-6">
-                                        <span className="px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                        <span className="whitespace-nowrap px-3 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
                                             {product.category}
                                         </span>
                                     </td>
                                     <td className="p-6 text-gray-300 font-mono">{product.purchases || 0}</td>
                                     <td className="p-6 text-gray-300 font-mono">
-                                        {currency === "USD" ? "$" : "₹"}{(currency === "USD" ? product.price : product.price * EXCHANGE_RATE).toLocaleString()}
+                                        {currency === "USD" ? "$" : "₹"}{(currency === "USD" ? product.price : product.price * exchangeRate).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                                     </td>
                                     <td className="p-6 text-right">
                                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -295,13 +309,13 @@ export default function AdminProducts() {
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium text-gray-400 mb-2">Features (Comma separated)</label>
-                                        <input
-                                            type="text"
-                                            value={currentProduct.features?.join(", ") || ""}
-                                            onChange={(e) => setCurrentProduct({ ...currentProduct, features: e.target.value.split(",").map(f => f.trim()) })}
-                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                                            placeholder="e.g. Dark Mode, API Access, Cloud Sync"
+                                        <label className="block text-sm font-medium text-gray-400 mb-2">Features (Newline separated)</label>
+                                        <textarea
+                                            rows={4}
+                                            value={currentProduct.features?.join("\n") || ""}
+                                            onChange={(e) => setCurrentProduct({ ...currentProduct, features: e.target.value.split("\n") })}
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none whitespace-pre-wrap"
+                                            placeholder="Dark Mode&#10;API Access&#10;Cloud Sync"
                                         />
                                     </div>
                                 </div>

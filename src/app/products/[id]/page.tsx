@@ -17,7 +17,7 @@ export default function ProductDetailsPage() {
     // Currency State
     const [currency, setCurrency] = useState<"USD" | "INR">("USD");
     const [displayPrice, setDisplayPrice] = useState<number>(0);
-    const EXCHANGE_RATE = 85;
+    const [exchangeRate, setExchangeRate] = useState<number>(90);
 
     useEffect(() => {
         const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -25,6 +25,16 @@ export default function ProductDetailsPage() {
         if (userTimezone === "Asia/Kolkata" || userTimezone === "Asia/Calcutta" || userTimezone.includes("India")) {
             setCurrency("INR");
         }
+
+        // Fetch live exchange rate
+        fetch("https://open.er-api.com/v6/latest/USD")
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.rates && data.rates.INR) {
+                    setExchangeRate(data.rates.INR);
+                }
+            })
+            .catch(err => console.error("Failed to fetch live exchange rate", err));
     }, []);
 
     useEffect(() => {
@@ -33,7 +43,7 @@ export default function ProductDetailsPage() {
                 setProduct(p);
                 if (p) {
                     if (currency === "INR") {
-                        setDisplayPrice(p.price * EXCHANGE_RATE);
+                        setDisplayPrice(p.price * exchangeRate);
                     } else {
                         setDisplayPrice(p.price);
                     }
@@ -41,7 +51,7 @@ export default function ProductDetailsPage() {
                 setLoading(false);
             });
         }
-    }, [id, currency]);
+    }, [id, currency, exchangeRate]);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [userDetails, setUserDetails] = useState({
         name: "",
@@ -219,7 +229,7 @@ export default function ProductDetailsPage() {
                             <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
                                 {product.name}
                             </h1>
-                            <p className="text-lg text-gray-400 leading-relaxed">
+                            <p className="text-lg text-gray-400 leading-relaxed whitespace-pre-wrap">
                                 {product.longDescription || product.description}
                             </p>
                         </div>

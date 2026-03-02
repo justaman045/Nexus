@@ -58,7 +58,15 @@ const MOCK_PRODUCTS: Product[] = [
     },
 ];
 
+let cachedProducts: Product[] | null = null;
+let lastProductsFetch = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export async function getProducts(): Promise<Product[]> {
+    if (cachedProducts && Date.now() - lastProductsFetch < CACHE_TTL) {
+        return cachedProducts;
+    }
+
     try {
         const querySnapshot = await getDocs(collection(db, "products"));
         if (querySnapshot.empty) {
@@ -80,6 +88,8 @@ export async function getProducts(): Promise<Product[]> {
             return dateB - dateA; // Newer date first
         });
 
+        cachedProducts = sortedProducts;
+        lastProductsFetch = Date.now();
         return sortedProducts;
     } catch (error) {
         console.error("Error fetching products:", error);
@@ -88,6 +98,11 @@ export async function getProducts(): Promise<Product[]> {
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
+    if (cachedProducts && Date.now() - lastProductsFetch < CACHE_TTL) {
+        const cached = cachedProducts.find(p => p.id === id);
+        if (cached) return cached;
+    }
+
     try {
         const docRef = doc(db, "products", id);
         const docSnap = await getDoc(docRef);
@@ -107,15 +122,18 @@ export async function addProduct(product: Omit<Product, "id" | "purchases" | "cr
         purchases: 0,
         createdAt: new Date().toISOString()
     };
+    cachedProducts = null;
     return await addDoc(collection(db, "products"), newProduct);
 }
 
 export async function updateProduct(id: string, product: Partial<Product>) {
     const docRef = doc(db, "products", id);
+    cachedProducts = null;
     return await setDoc(docRef, product, { merge: true });
 }
 
 export async function deleteProduct(id: string) {
+    cachedProducts = null;
     return await deleteDoc(doc(db, "products", id));
 }
 

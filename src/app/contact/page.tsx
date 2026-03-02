@@ -68,7 +68,7 @@ export default function ContactPage() {
                                     </div>
                                     <div>
                                         <h4 className="text-lg font-semibold text-white">Email</h4>
-                                        {contactInfo.emails.map((email, i) => (
+                                        {contactInfo.emails?.map((email, i) => (
                                             <p key={i} className="text-gray-400">{email}</p>
                                         ))}
                                     </div>
@@ -91,8 +91,8 @@ export default function ContactPage() {
                                     </div>
                                     <div>
                                         <h4 className="text-lg font-semibold text-white">Office</h4>
-                                        <p className="text-gray-400">{contactInfo.address.line1}</p>
-                                        <p className="text-gray-400">{contactInfo.address.line2}</p>
+                                        <p className="text-gray-400">{contactInfo.address?.line1}</p>
+                                        <p className="text-gray-400">{contactInfo.address?.line2}</p>
                                     </div>
                                 </div>
                             </div>

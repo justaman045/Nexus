@@ -27,7 +27,8 @@ export default function AdminDashboard() {
                 // Use default content if CMS content is missing (fallback)
                 const content = cmsContent || defaultContent;
                 const productCount = products.length;
-
+                const totalPurchases = products.reduce((acc, product) => acc + (product.purchases || 0), 0);
+                const downloadsDisplayValue = totalPurchases > 1000 ? totalPurchases.toLocaleString() : (content.stats[1]?.value || "10k+");
                 // Map CMS stats to dashboard cards
                 // Assuming CMS stats order: [Active Users, Downloads, Countries, Uptime]
                 // We'll map them dynamically or by index for now to match the dashboard layout
@@ -40,8 +41,8 @@ export default function AdminDashboard() {
                         color: "blue"
                     },
                     {
-                        label: content.stats[1]?.label || "Downloads",
-                        value: content.stats[1]?.value || "0",
+                        label: "Downloads",
+                        value: downloadsDisplayValue,
                         icon: TrendingUp,
                         change: "+8%",
                         color: "green"
@@ -50,12 +51,12 @@ export default function AdminDashboard() {
                         label: "Active Products",
                         value: productCount.toString(),
                         icon: Package,
-                        change: "+2",
+                        change: "+" + (productCount - 1),
                         color: "purple"
                     },
                     {
                         label: content.stats[2]?.label || "Countries",
-                        value: content.stats[2]?.value || "0",
+                        value: content.stats[2]?.value || "1",
                         icon: Users,
                         change: "+5",
                         color: "pink"

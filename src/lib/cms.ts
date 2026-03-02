@@ -122,13 +122,23 @@ export const defaultContent: HomepageContent = {
     }
 };
 
+let cachedContent: HomepageContent | null = null;
+let lastContentFetch = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 export async function getHomepageContent(): Promise<HomepageContent> {
+    if (cachedContent && Date.now() - lastContentFetch < CACHE_TTL) {
+        return cachedContent;
+    }
+
     try {
         const docRef = doc(db, "content", HOMEPAGE_DOC_ID);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
-            return docSnap.data() as HomepageContent;
+            cachedContent = docSnap.data() as HomepageContent;
+            lastContentFetch = Date.now();
+            return cachedContent;
         } else {
             // Return default if not found (or seed it)
             return defaultContent;
@@ -144,6 +154,7 @@ export async function updateHomepageContent(data: Partial<HomepageContent>) {
         const docRef = doc(db, "content", HOMEPAGE_DOC_ID);
         // Use setDoc with merge: true to create if not exists or update fields
         await setDoc(docRef, data, { merge: true });
+        cachedContent = null;
         return true;
     } catch (error) {
         console.error("Error updating homepage content:", error);

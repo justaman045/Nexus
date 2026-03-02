@@ -76,7 +76,7 @@ export default function AdminOrders() {
                                     <td className="p-6">
                                         <div className="font-mono text-xs text-gray-500 mb-1">{order.paymentId || "N/A"}</div>
                                         <div className="text-white text-sm">
-                                            {order.createdAt?.toDate().toLocaleDateString()} <span className="text-gray-600">at</span> {order.createdAt?.toDate().toLocaleTimeString()}
+                                            {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleDateString() : new Date(order.createdAt as any).toLocaleDateString()} <span className="text-gray-600">at</span> {order.createdAt?.toDate ? order.createdAt.toDate().toLocaleTimeString() : new Date(order.createdAt as any).toLocaleTimeString()}
                                         </div>
                                     </td>
                                     <td className="p-6">

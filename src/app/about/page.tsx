@@ -48,7 +48,7 @@ export default function AboutPage() {
                         {
                             icon: <Zap className="w-8 h-8 text-purple-400" />,
                             title: "Innovation",
-                            desc: "Pushing the boundaries of what's possible on the web with modern tech stacks."
+                            desc: "Pushing the boundaries of what's possible on the web and Mobile with modern tech stacks."
                         },
                         {
                             icon: <Users className="w-8 h-8 text-pink-400" />,

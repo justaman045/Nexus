@@ -21,6 +21,7 @@ export interface Order {
 export async function addOrder(order: Omit<Order, "id">) {
     try {
         const docRef = await addDoc(collection(db, "orders"), order);
+        cachedOrders = null;
         return docRef.id;
     } catch (error) {
         console.error("Error adding order:", error);
@@ -28,14 +29,25 @@ export async function addOrder(order: Omit<Order, "id">) {
     }
 }
 
+let cachedOrders: Order[] | null = null;
+let lastOrdersFetch = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
 export async function getOrders(): Promise<Order[]> {
+    if (cachedOrders && Date.now() - lastOrdersFetch < CACHE_TTL) {
+        return cachedOrders;
+    }
+
     try {
         const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
         const querySnapshot = await getDocs(q);
-        return querySnapshot.docs.map(doc => ({
+        const orders = querySnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
         } as Order));
+        cachedOrders = orders;
+        lastOrdersFetch = Date.now();
+        return orders;
     } catch (error) {
         console.error("Error fetching orders:", error);
         return [];
