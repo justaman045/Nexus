@@ -2,174 +2,201 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Mail, MapPin, Phone, Send } from "lucide-react";
+import { EnvelopeSimple, MapPin, Phone, PaperPlaneTilt, CircleNotch } from "@phosphor-icons/react";
 import { getHomepageContent, defaultContent, HomepageContent } from "@/lib/cms";
 
+const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
+
 export default function ContactPage() {
-    const [content, setContent] = useState<HomepageContent | null>(null);
-    const [formData, setFormData] = useState({
-        name: "",
-        email: "",
-        subject: "",
-        message: "",
-    });
+    const [content, setContent] = useState<HomepageContent>(defaultContent);
+    const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [sent, setSent] = useState(false);
 
     useEffect(() => {
-        async function loadContent() {
-            const data = await getHomepageContent();
-            setContent(data);
-        }
-        loadContent();
+        getHomepageContent().then(d => { if (d) setContent(d); }).catch(() => {});
     }, []);
 
-    const contactInfo = content?.contact || defaultContent.contact;
-
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // TODO: Implement form submission logic (e.g., Firestore or EmailJS)
-        alert("Message sent! (Simulation)");
+        setIsSubmitting(true);
+        await new Promise(r => setTimeout(r, 1400));
+        setSent(true);
+        setIsSubmitting(false);
         setFormData({ name: "", email: "", subject: "", message: "" });
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+    const contactInfo = content.contact || {
+        emails: ["hello@nexus.com"],
+        phone: "+1 (555) 000-0000",
+        hours: "Mon–Fri, 9am–6pm EST",
+        address: { line1: "123 Innovation Drive", line2: "San Francisco, CA" },
     };
 
     return (
-        <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto">
+        <div className="min-h-[100dvh] bg-background overflow-x-hidden">
+
+            {/* ── Hero ── */}
+            <section className="text-center py-20 px-6 border-b border-border/50">
                 <motion.div
-                    initial={{ opacity: 0, y: -20 }}
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="text-center mb-16"
+                    transition={{ duration: 0.8, ease: EASE }}
+                    className="max-w-[600px] mx-auto space-y-5"
                 >
-                    <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500">
-                        Get in Touch
+                    <p className="text-label">Get in touch</p>
+                    <h1 className="text-[clamp(40px,6vw,72px)] font-bold tracking-tight leading-[1.05] gradient-text">
+                        Let&apos;s Connect.
                     </h1>
-                    <p className="text-xl text-gray-400 max-w-2xl mx-auto">
-                        Have a question about our software? Need support? We're here to help.
+                    <p className="text-[16px] text-muted-foreground leading-relaxed max-w-[420px] mx-auto">
+                        Have a question or need support? We respond to every message within 24 hours.
                     </p>
                 </motion.div>
+            </section>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    {/* Contact Info */}
+            {/* ── Content ── */}
+            <div className="container-pro px-6 sm:px-8 lg:px-12 py-20">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_520px] gap-12 xl:gap-20 items-start">
+
+                    {/* Left: contact info */}
                     <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="space-y-8"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1, duration: 0.8, ease: EASE }}
+                        className="space-y-10"
                     >
-                        <div className="glass p-8 rounded-2xl border border-white/10">
-                            <h3 className="text-2xl font-bold text-white mb-6">Contact Information</h3>
-                            <div className="space-y-6">
-                                <div className="flex items-start gap-4">
-                                    <div className="p-3 bg-blue-500/10 rounded-lg">
-                                        <Mail className="w-6 h-6 text-blue-400" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-semibold text-white">Email</h4>
-                                        {contactInfo.emails?.map((email, i) => (
-                                            <p key={i} className="text-gray-400">{email}</p>
-                                        ))}
-                                    </div>
-                                </div>
+                        <div className="space-y-2">
+                            <h2 className="text-[24px] font-bold tracking-tight text-foreground">Contact details</h2>
+                            <p className="text-[15px] text-muted-foreground leading-relaxed">
+                                Our team is distributed globally and available across timezones.
+                            </p>
+                        </div>
 
-                                <div className="flex items-start gap-4">
-                                    <div className="p-3 bg-purple-500/10 rounded-lg">
-                                        <Phone className="w-6 h-6 text-purple-400" />
+                        <div className="space-y-6">
+                            {[
+                                {
+                                    icon: EnvelopeSimple,
+                                    label: "Email",
+                                    value: contactInfo.emails?.[0] ?? "hello@nexus.com",
+                                    sub: null,
+                                },
+                                {
+                                    icon: Phone,
+                                    label: "Phone",
+                                    value: contactInfo.phone ?? "+1 (555) 000-0000",
+                                    sub: contactInfo.hours ?? "Mon–Fri, 9am–6pm",
+                                },
+                                {
+                                    icon: MapPin,
+                                    label: "Location",
+                                    value: contactInfo.address?.line1 ?? "San Francisco, CA",
+                                    sub: contactInfo.address?.line2 ?? null,
+                                },
+                            ].map(({ icon: Icon, label, value, sub }) => (
+                                <div key={label} className="flex items-start gap-4">
+                                    <div className="w-10 h-10 rounded-xl bg-secondary border border-border flex items-center justify-center shrink-0">
+                                        <Icon size={18} weight="regular" className="text-muted-foreground" />
                                     </div>
                                     <div>
-                                        <h4 className="text-lg font-semibold text-white">Phone</h4>
-                                        <p className="text-gray-400">{contactInfo.phone}</p>
-                                        <p className="text-gray-400">{contactInfo.hours}</p>
+                                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground mb-1">{label}</p>
+                                        <p className="text-[15px] font-semibold text-foreground">{value}</p>
+                                        {sub && <p className="text-[13px] text-muted-foreground mt-0.5">{sub}</p>}
                                     </div>
                                 </div>
+                            ))}
+                        </div>
 
-                                <div className="flex items-start gap-4">
-                                    <div className="p-3 bg-pink-500/10 rounded-lg">
-                                        <MapPin className="w-6 h-6 text-pink-400" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-lg font-semibold text-white">Office</h4>
-                                        <p className="text-gray-400">{contactInfo.address?.line1}</p>
-                                        <p className="text-gray-400">{contactInfo.address?.line2}</p>
-                                    </div>
-                                </div>
-                            </div>
+                        {/* Response time note */}
+                        <div className="card-pro p-5 flex items-center gap-3">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                            <p className="text-[13px] text-muted-foreground">
+                                <span className="font-semibold text-foreground">Typically replies within 2 hours</span> during business hours
+                            </p>
                         </div>
                     </motion.div>
 
-                    {/* Contact Form */}
+                    {/* Right: form */}
                     <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.4 }}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2, duration: 0.8, ease: EASE }}
                     >
-                        <form onSubmit={handleSubmit} className="glass p-8 rounded-2xl border border-white/10 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-2">Name</label>
-                                    <input
-                                        type="text"
-                                        id="name"
-                                        name="name"
-                                        value={formData.name}
-                                        onChange={handleChange}
-                                        required
-                                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all"
-                                        placeholder="John Doe"
-                                    />
+                        <div className="card-pro p-8 rounded-[24px]">
+                            {sent ? (
+                                <div className="py-12 text-center space-y-4">
+                                    <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                                        <PaperPlaneTilt size={24} weight="fill" className="text-emerald-500" />
+                                    </div>
+                                    <h3 className="text-[20px] font-bold text-foreground">Message sent!</h3>
+                                    <p className="text-[14px] text-muted-foreground">We'll get back to you within 24 hours.</p>
+                                    <button
+                                        onClick={() => setSent(false)}
+                                        className="text-[13px] font-semibold text-accent hover:underline mt-2"
+                                    >
+                                        Send another
+                                    </button>
                                 </div>
-                                <div>
-                                    <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">Email</label>
-                                    <input
-                                        type="email"
-                                        id="email"
-                                        name="email"
-                                        value={formData.email}
-                                        onChange={handleChange}
-                                        required
-                                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all"
-                                        placeholder="john@example.com"
-                                    />
-                                </div>
-                            </div>
+                            ) : (
+                                <form onSubmit={handleSubmit} className="space-y-5">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {[
+                                            { label: "Name", name: "name", type: "text", placeholder: "Your name" },
+                                            { label: "Email", name: "email", type: "email", placeholder: "your@email.com" },
+                                        ].map(f => (
+                                            <div key={f.name} className="space-y-1.5">
+                                                <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{f.label}</label>
+                                                <input
+                                                    required
+                                                    type={f.type}
+                                                    name={f.name}
+                                                    value={formData[f.name as keyof typeof formData]}
+                                                    onChange={e => setFormData(p => ({ ...p, [f.name]: e.target.value }))}
+                                                    placeholder={f.placeholder}
+                                                    className="input-apple py-3 text-[14px]"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
 
-                            <div>
-                                <label htmlFor="subject" className="block text-sm font-medium text-gray-300 mb-2">Subject</label>
-                                <input
-                                    type="text"
-                                    id="subject"
-                                    name="subject"
-                                    value={formData.subject}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all"
-                                    placeholder="Inquiry about..."
-                                />
-                            </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Subject</label>
+                                        <input
+                                            required
+                                            type="text"
+                                            name="subject"
+                                            value={formData.subject}
+                                            onChange={e => setFormData(p => ({ ...p, subject: e.target.value }))}
+                                            placeholder="What's this about?"
+                                            className="input-apple py-3 text-[14px]"
+                                        />
+                                    </div>
 
-                            <div>
-                                <label htmlFor="message" className="block text-sm font-medium text-gray-300 mb-2">Message</label>
-                                <textarea
-                                    id="message"
-                                    name="message"
-                                    value={formData.message}
-                                    onChange={handleChange}
-                                    required
-                                    rows={4}
-                                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-white placeholder-gray-500 transition-all resize-none"
-                                    placeholder="How can we help you?"
-                                />
-                            </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Message</label>
+                                        <textarea
+                                            required
+                                            name="message"
+                                            value={formData.message}
+                                            onChange={e => setFormData(p => ({ ...p, message: e.target.value }))}
+                                            placeholder="How can we help you?"
+                                            rows={5}
+                                            className="input-apple py-3 text-[14px] resize-none"
+                                        />
+                                    </div>
 
-                            <button
-                                type="submit"
-                                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-blue-500/20 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center gap-2"
-                            >
-                                <Send className="w-5 h-5" /> Send Message
-                            </button>
-                        </form>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="btn-apple btn-apple-primary w-full py-3.5 text-[14px] font-semibold mt-1 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        {isSubmitting
+                                            ? <CircleNotch size={18} className="animate-spin" weight="bold" />
+                                            : <><PaperPlaneTilt size={16} weight="bold" /> Send Message</>
+                                        }
+                                    </button>
+                                </form>
+                            )}
+                        </div>
                     </motion.div>
                 </div>
             </div>

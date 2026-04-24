@@ -3,47 +3,31 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Search, Filter, ArrowRight } from "lucide-react";
+import { MagnifyingGlass, ArrowRight, CircleNotch } from "@phosphor-icons/react";
 import { getProducts, Product } from "@/lib/products";
-import { getHomepageContent } from "@/lib/cms";
+import { useCurrency } from "@/components/CurrencyProvider";
 
 export default function ProductsPage() {
     const [products, setProducts] = useState<Product[]>([]);
     const [categories, setCategories] = useState<string[]>(["All"]);
     const [filter, setFilter] = useState("All");
     const [search, setSearch] = useState("");
-
-    // Currency State
-    const [currency, setCurrency] = useState<"USD" | "INR">("USD");
-    const [exchangeRate, setExchangeRate] = useState<number>(90);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        if (userTimezone === "Asia/Kolkata" || userTimezone === "Asia/Calcutta" || userTimezone.includes("India")) {
-            setCurrency("INR");
+        async function loadData() {
+            try {
+                const data = await getProducts();
+                setProducts(data);
+                const uniqueCategories = Array.from(new Set(data.map(p => p.category)));
+                setCategories(["All", ...uniqueCategories]);
+            } catch (error) {
+                console.error("Failed to load products:", error);
+            } finally {
+                setIsLoading(false);
+            }
         }
-
-        fetch("https://open.er-api.com/v6/latest/USD")
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.rates && data.rates.INR) {
-                    setExchangeRate(data.rates.INR);
-                }
-            })
-            .catch(err => console.error("Failed to fetch live exchange rate", err));
-    }, []);
-
-    useEffect(() => {
-        Promise.all([
-            getProducts(),
-            getHomepageContent()
-        ]).then(([productsData, contentData]) => {
-            setProducts(productsData);
-
-            // Derive unique categories dynamically from actual products
-            const uniqueCategories = Array.from(new Set(productsData.map(p => p.category)));
-            setCategories(["All", ...uniqueCategories]);
-        });
+        loadData();
     }, []);
 
     const filteredProducts = products.filter((product) => {
@@ -52,113 +36,175 @@ export default function ProductsPage() {
         return matchesFilter && matchesSearch;
     });
 
-    return (
-        <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto">
-                <h1 className="text-4xl md:text-5xl font-bold mb-8 text-center bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500">
-                    Our Software Suite
-                </h1>
+    if (isLoading) {
+        return (
+            <div className="min-h-[100dvh] flex items-center justify-center bg-background">
+                <CircleNotch className="w-10 h-10 text-foreground animate-spin opacity-20" weight="bold" />
+            </div>
+        );
+    }
 
-                {/* Filters & Search */}
-                <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-4">
-                    <div className="flex flex-wrap gap-2">
+    return (
+        <div className="min-h-[100dvh] bg-background overflow-x-hidden">
+
+            {/* ── CENTERED HERO HEADER ── */}
+            <section className="section-padding text-center border-b border-border/50">
+                <div className="max-w-[760px] mx-auto space-y-6">
+                    <motion.p
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-label"
+                    >
+                        The Catalogue
+                    </motion.p>
+                    <motion.h1
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.08, duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-hero gradient-text"
+                    >
+                        Premium software,<br />built in-house.
+                    </motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.16, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                        className="text-body-large text-muted-foreground max-w-[520px] mx-auto"
+                    >
+                        Every product is designed, engineered, and sold exclusively here. License-based access. Instant delivery.
+                    </motion.p>
+
+                    {/* Product count badge */}
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.28, duration: 0.6 }}
+                        className="pt-2"
+                    >
+                        <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-border bg-secondary/40 text-[12px] font-semibold text-muted-foreground">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            {products.length} product{products.length !== 1 ? "s" : ""} available
+                        </span>
+                    </motion.div>
+                </div>
+            </section>
+
+            {/* ── FILTER BAR ── */}
+            <div className="container-pro px-6 sm:px-8 lg:px-12 pt-10 pb-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                    <div className="flex items-center gap-1 p-1 rounded-full bg-secondary/40 border border-border">
                         {categories.map((cat) => (
                             <button
                                 key={cat}
                                 onClick={() => setFilter(cat)}
-                                className={`px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${filter === cat
-                                    ? "bg-blue-600 text-white shadow-lg shadow-blue-500/30"
-                                    : "glass text-gray-300 hover:bg-white/10"
-                                    }`}
+                                className={`relative px-5 py-2 rounded-full text-[13px] font-semibold transition-all duration-200 ${
+                                    filter === cat
+                                        ? "bg-foreground text-background shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                }`}
                             >
                                 {cat}
                             </button>
                         ))}
                     </div>
 
-                    <div className="relative w-full md:w-64">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <div className="relative group">
+                        <MagnifyingGlass size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 group-focus-within:text-muted-foreground transition-colors" />
                         <input
                             type="text"
                             placeholder="Search products..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-white/5 border border-white/10 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm text-white placeholder-gray-500 transition-all"
+                            className="input-apple pl-10 pr-4 py-2.5 w-64 text-[13px]"
                         />
                     </div>
                 </div>
+            </div>
 
-                {/* Product Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {filteredProducts.map((product, index) => (
-                        <motion.div
-                            key={product.id}
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.1 }}
-                            className="glass-card overflow-hidden group flex flex-col h-full"
-                        >
-                            <div className="relative h-48 overflow-hidden">
-                                <img
-                                    src={product.imageUrl}
-                                    alt={product.name}
-                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                                />
-                                <div className="absolute top-4 right-4 bg-black/50 backdrop-blur-md px-2 py-1 rounded text-xs font-medium text-white border border-white/10">
-                                    {product.category}
-                                </div>
-                            </div>
-
-                            <div className="p-6 flex flex-col flex-grow">
-                                <h3 className="text-xl font-bold mb-2 text-white">{product.name}</h3>
-                                <p className="text-gray-400 text-sm mb-4 flex-grow line-clamp-3">
-                                    {product.description}
-                                </p>
-
-                                <div className="flex flex-wrap gap-2 mb-6">
-                                    {product.features.slice(0, 2).map((feat, i) => (
-                                        <span key={i} className="text-xs bg-white/5 border border-white/10 px-2 py-1 rounded text-gray-300">
-                                            {feat}
-                                        </span>
-                                    ))}
-                                    {product.features.length > 2 && (
-                                        <span className="text-xs bg-white/5 border border-white/10 px-2 py-1 rounded text-gray-300">
-                                            +{product.features.length - 2} more
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/10">
-                                    <span className="text-lg font-bold text-white">
-                                        {currency === "USD" ? "$" : "₹"}{(currency === "USD" ? product.price : product.price * exchangeRate).toLocaleString()}
-                                    </span>
-                                    <div className="flex gap-3">
-                                        <Link href={`/products/${product.id}`} className="text-blue-400 hover:text-blue-300 text-sm font-medium flex items-center gap-1 transition-colors">
-                                            View Details <ArrowRight className="w-4 h-4" />
-                                        </Link>
-                                        {product.demoUrl && (
-                                            <a
-                                                href={product.demoUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-gray-400 hover:text-white text-sm font-medium transition-colors"
-                                            >
-                                                Live Demo
-                                            </a>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </motion.div>
-                    ))}
-                </div>
-
-                {filteredProducts.length === 0 && (
-                    <div className="text-center py-20 text-gray-400">
-                        No products found matching your criteria.
+            {/* ── PRODUCT GRID ── */}
+            <div className="container-pro px-6 sm:px-8 lg:px-12 pb-32 pt-8">
+                {filteredProducts.length === 0 ? (
+                    <div className="text-center py-32 text-muted-foreground">
+                        <p className="text-[17px] font-medium">No products found.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredProducts.map((product, index) => (
+                            <ProductCard key={product.id} product={product} index={index} />
+                        ))}
                     </div>
                 )}
             </div>
         </div>
+    );
+}
+
+function ProductCard({ product, index }: { product: Product; index: number }) {
+    const { format: formatCurrency } = useCurrency();
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.06, duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+            className="group"
+        >
+            <Link href={`/products/${product.id}`} className="block">
+                {/* Image */}
+                <div className="relative aspect-[3/2] rounded-[20px] overflow-hidden bg-secondary/30 border border-border mb-5">
+                    {product.imageUrl ? (
+                        <img
+                            src={product.imageUrl}
+                            alt={product.name}
+                            className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-[2s] ease-out"
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-5xl font-bold text-foreground/5">{product.name[0]}</span>
+                        </div>
+                    )}
+                    {/* Category pill */}
+                    <div className="absolute top-4 left-4">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.14em] uppercase backdrop-blur-md bg-background/70 border border-border text-foreground/80">
+                            {product.category}
+                        </span>
+                    </div>
+                    {/* Price pill */}
+                    <div className="absolute top-4 right-4">
+                        <span className="px-3 py-1 rounded-full text-[13px] font-bold backdrop-blur-md bg-background/70 border border-border text-foreground">
+                            {formatCurrency(product.price)}
+                        </span>
+                    </div>
+                    {/* Hover overlay */}
+                    <div className="absolute inset-0 bg-foreground/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                </div>
+
+                {/* Info */}
+                <div className="space-y-3 px-1">
+                    <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-[20px] font-bold text-foreground tracking-tight leading-tight">{product.name}</h3>
+                        {product.version && (
+                            <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest shrink-0 pt-1">
+                                v{product.version}
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-[14px] text-muted-foreground leading-relaxed line-clamp-2">
+                        {product.description}
+                    </p>
+                </div>
+            </Link>
+
+            {/* CTA */}
+            <div className="px-1 mt-5">
+                <Link
+                    href={`/products/${product.id}`}
+                    className="flex items-center justify-between w-full px-5 py-3.5 rounded-[14px] border border-border bg-secondary/30 hover:bg-secondary/60 hover:border-foreground/20 transition-all duration-200 group/btn"
+                >
+                    <span className="text-[14px] font-semibold text-foreground">View & Purchase</span>
+                    <ArrowRight size={16} className="text-muted-foreground group-hover/btn:text-foreground group-hover/btn:translate-x-0.5 transition-all duration-200" />
+                </Link>
+            </div>
+        </motion.div>
     );
 }

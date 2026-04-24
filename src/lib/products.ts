@@ -9,9 +9,12 @@ export interface Product {
     imageUrl: string;
     features: string[];
     category: string;
-    demoUrl?: string; // Existing
-    longDescription?: string; // New
-    order?: number; // Deprecated
+    demoUrl?: string;
+    version?: string; // New
+    downloadUrl?: string; // New
+    documentationUrl?: string; // New
+    longDescription?: string;
+    order?: number;
     purchases: number; // New for sorting
     createdAt: string; // New for sorting
 }

@@ -2,96 +2,135 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Menu, X, Rocket } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Rocket, List, X } from "@phosphor-icons/react";
+import { ThemeToggle } from "./ThemeToggle";
+
+const navLinks = [
+  { label: "Products", href: "/products" },
+  { label: "Dashboard", href: "/dashboard" },
+  { label: "Track Order", href: "/orders" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contact" },
+];
 
 export default function Navbar() {
-    const [isOpen, setIsOpen] = useState(false);
-    const [scrolled, setScrolled] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
 
-    useEffect(() => {
-        const handleScroll = () => {
-            setScrolled(window.scrollY > 20);
-        };
-        window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
-    }, []);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
-    return (
-        <nav
-            className={`fixed top-4 left-1/2 -translate-x-1/2 w-[95%] max-w-7xl z-50 transition-all duration-300 rounded-2xl ${scrolled ? "glass-nav py-2" : "bg-transparent py-4"
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  return (
+    <>
+      <nav
+        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 apple-glass ${
+          scrolled ? "py-4" : "py-6"
+        }`}
+      >
+        <div className="container-pro flex items-center justify-between px-6 sm:px-8 lg:px-12">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-xl bg-foreground flex items-center justify-center transition-transform group-hover:scale-95">
+              <Rocket size={16} weight="fill" className="text-background" />
+            </div>
+            <span className="font-bold text-[17px] tracking-[-0.03em] text-foreground">
+              Nexus
+            </span>
+          </Link>
+
+          {/* Desktop Nav */}
+          <div className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`px-4 py-2 rounded-full text-[14px] font-medium transition-all duration-200 ${
+                  pathname === link.href
+                    ? "bg-foreground/[0.07] text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
                 }`}
-        >
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex items-center justify-between h-16">
-                    <div className="flex-shrink-0">
-                        <Link href="/" className="flex items-center gap-2">
-                            <div className="p-2 bg-gradient-to-tr from-blue-500 to-purple-600 rounded-lg">
-                                <Rocket className="h-6 w-6 text-white" />
-                            </div>
-                            <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500">
-                                Nexus
-                            </span>
-                        </Link>
-                    </div>
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
 
-                    <div className="hidden md:block">
-                        <div className="ml-10 flex items-baseline space-x-8">
-                            <Link href="/" className="text-gray-300 hover:text-white transition-colors duration-300 px-3 py-2 rounded-md text-sm font-medium">
-                                Home
-                            </Link>
-                            <Link href="/products" className="text-gray-300 hover:text-white transition-colors duration-300 px-3 py-2 rounded-md text-sm font-medium">
-                                Products
-                            </Link>
-                            <Link href="/orders" className="text-gray-300 hover:text-white transition-colors duration-300 px-3 py-2 rounded-md text-sm font-medium">
-                                Track Order
-                            </Link>
-                            <Link href="/about" className="text-gray-300 hover:text-white transition-colors duration-300 px-3 py-2 rounded-md text-sm font-medium">
-                                About
-                            </Link>
-                            <Link href="/contact" className="text-gray-300 hover:text-white transition-colors duration-300 px-3 py-2 rounded-md text-sm font-medium">
-                                Contact
-                            </Link>
-                        </div>
-                    </div>
+          {/* Right cluster */}
+          <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
+            <Link href="/products" className="btn-pro btn-pro-accent text-[13px] py-2.5 px-5">
+              Shop Now
+            </Link>
+          </div>
 
-                    <div className="hidden md:block">
-                        <Link href="/products" className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-full backdrop-blur-sm border border-white/10 transition-all duration-300 text-sm font-medium">
-                            Explore Apps
-                        </Link>
-                    </div>
+          {/* Mobile hamburger */}
+          <div className="flex md:hidden items-center gap-3">
+            <ThemeToggle />
+            <button
+              onClick={() => setMobileOpen((v) => !v)}
+              className="w-9 h-9 rounded-xl bg-foreground/[0.06] flex items-center justify-center text-foreground"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={18} weight="bold" /> : <List size={18} weight="bold" />}
+            </button>
+          </div>
+        </div>
+      </nav>
 
-                    <div className="-mr-2 flex md:hidden">
-                        <button
-                            onClick={() => setIsOpen(!isOpen)}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/10 focus:outline-none transition-colors"
-                        >
-                            <span className="sr-only">Open main menu</span>
-                            {isOpen ? <X className="block h-6 w-6" /> : <Menu className="block h-6 w-6" />}
-                        </button>
-                    </div>
-                </div>
+      {/* Mobile Menu Overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl flex flex-col md:hidden"
+          >
+            <div className="flex flex-col gap-2 px-8 pt-28 pb-12">
+              {navLinks.map((link, i) => (
+                <motion.div
+                  key={link.href}
+                  initial={{ opacity: 0, x: -16 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.06, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <Link
+                    href={link.href}
+                    className={`block text-[32px] font-bold tracking-tight py-2 transition-colors ${
+                      pathname === link.href
+                        ? "text-accent"
+                        : "text-foreground hover:text-accent"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </motion.div>
+              ))}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25, duration: 0.4 }}
+                className="mt-8"
+              >
+                <Link href="/products" className="btn-apple btn-apple-primary w-full justify-center">
+                  Shop Now
+                </Link>
+              </motion.div>
             </div>
-
-            {/* Mobile menu */}
-            <div className={`md:hidden transition-all duration-300 ease-in-out ${isOpen ? "max-h-64 opacity-100" : "max-h-0 opacity-0 overflow-hidden"}`}>
-                <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 glass border-b border-white/10">
-                    <Link href="/" className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
-                        Home
-                    </Link>
-                    <Link href="/products" className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
-                        Products
-                    </Link>
-                    <Link href="/orders" className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
-                        Track Order
-                    </Link>
-                    <Link href="/about" className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
-                        About
-                    </Link>
-                    <Link href="/contact" className="text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium">
-                        Contact
-                    </Link>
-                </div>
-            </div>
-        </nav>
-    );
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
 }

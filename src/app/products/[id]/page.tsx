@@ -4,353 +4,408 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { ArrowLeft, Check, Download, ShoppingCart, X, ArrowRight, ExternalLink } from "lucide-react";
+import {
+    CaretLeft,
+    X,
+    ArrowRight,
+    BookOpen,
+    CircleNotch,
+    ArrowSquareOut,
+    Check,
+} from "@phosphor-icons/react";
 import { getProductById, Product } from "@/lib/products";
+import { generateLicense } from "@/lib/licenses";
 import { addDoc, collection, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
+import { useCurrency } from "@/components/CurrencyProvider";
+
+function loadRazorpayScript(): Promise<boolean> {
+    return new Promise((resolve) => {
+        if (typeof (window as any).Razorpay !== "undefined") { resolve(true); return; }
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+}
 
 export default function ProductDetailsPage() {
     const { id } = useParams();
     const [product, setProduct] = useState<Product | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    // Currency State
-    const [currency, setCurrency] = useState<"USD" | "INR">("USD");
-    const [displayPrice, setDisplayPrice] = useState<number>(0);
-    const [exchangeRate, setExchangeRate] = useState<number>(90);
-
-    useEffect(() => {
-        const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        console.log("Detected Timezone:", userTimezone); // Debugging
-        if (userTimezone === "Asia/Kolkata" || userTimezone === "Asia/Calcutta" || userTimezone.includes("India")) {
-            setCurrency("INR");
-        }
-
-        // Fetch live exchange rate
-        fetch("https://open.er-api.com/v6/latest/USD")
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.rates && data.rates.INR) {
-                    setExchangeRate(data.rates.INR);
-                }
-            })
-            .catch(err => console.error("Failed to fetch live exchange rate", err));
-    }, []);
-
-    useEffect(() => {
-        if (id) {
-            getProductById(id as string).then((p) => {
-                setProduct(p);
-                if (p) {
-                    if (currency === "INR") {
-                        setDisplayPrice(p.price * exchangeRate);
-                    } else {
-                        setDisplayPrice(p.price);
-                    }
-                }
-                setLoading(false);
-            });
-        }
-    }, [id, currency, exchangeRate]);
+    const [isLoading, setIsLoading] = useState(true);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [userDetails, setUserDetails] = useState({
-        name: "",
-        email: "",
-        contact: ""
-    });
     const [isProcessing, setIsProcessing] = useState(false);
+    const [userDetails, setUserDetails] = useState({ name: "", email: "", contact: "" });
+
+    const [gateway, setGateway] = useState<PaymentGateway>("razorpay");
+    const { currency, rate: exchangeRate, format: formatCurrency, convert } = useCurrency();
 
     useEffect(() => {
-        if (id) {
-            getProductById(id as string).then((p) => {
-                setProduct(p);
-                setLoading(false);
-            });
-        }
+        if (!id) return;
+        Promise.all([
+            getProductById(id as string),
+            getPaymentSettings(),
+        ]).then(([p, settings]) => {
+            setProduct(p);
+            setGateway(settings.gateway);
+            setIsLoading(false);
+        });
     }, [id]);
 
-    const loadScript = (src: string) => {
-        return new Promise((resolve) => {
-            if (document.querySelector(`script[src="${src}"]`)) {
-                resolve(true);
-                return;
-            }
-            const script = document.createElement("script");
-            script.src = src;
-            script.onload = () => resolve(true);
-            script.onerror = () => resolve(false);
-            document.body.appendChild(script);
+    const processRazorpay = async () => {
+        const loaded = await loadRazorpayScript();
+        if (!loaded) { alert("Failed to load payment gateway."); return; }
+
+        const res = await fetch("/api/razorpay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                amount: convert(product!.price),
+                currency: currency.code,
+            }),
         });
+        const order = await res.json();
+
+        const options = {
+            key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+            amount: order.amount,
+            currency: order.currency,
+            name: "Nexus SaaS",
+            description: `License for ${product!.name}`,
+            order_id: order.id,
+            handler: async function (response: any) {
+                try {
+                    await addDoc(collection(db, "orders"), {
+                        orderId: order.id,
+                        paymentId: response.razorpay_payment_id,
+                        productId: product!.id,
+                        productName: product!.name,
+                        customerInfo: userDetails,
+                        amount: product!.price,
+                        currency: currency.code,
+                        gateway: "razorpay",
+                        status: "paid",
+                        createdAt: new Date().toISOString(),
+                    });
+                    await updateDoc(doc(db, "products", product!.id), { purchases: increment(1) });
+                    const { licenseKey } = await generateLicense({
+                        productId: product!.id,
+                        productName: product!.name,
+                        customerEmail: userDetails.email,
+                        orderId: order.id,
+                    });
+                    alert(`Payment Successful!\n\nYour License Key: ${licenseKey}\n\nFind it anytime in your dashboard.`);
+                    setShowPaymentModal(false);
+                    setUserDetails({ name: "", email: "", contact: "" });
+                } catch {
+                    alert("Payment succeeded but order save failed. Contact support.");
+                }
+            },
+            prefill: { name: userDetails.name, email: userDetails.email, contact: userDetails.contact },
+            theme: { color: "#000000" },
+        };
+
+        const paymentObject = new (window as any).Razorpay(options);
+        paymentObject.open();
     };
 
-    const handleBuyClick = () => {
-        setShowPaymentModal(true);
-    };
-
-    const processPayment = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsProcessing(true);
-
-        const res = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
-
-        if (!res) {
-            alert("Razorpay SDK failed to load. Are you online?");
-            setIsProcessing(false);
+    const processStripe = async () => {
+        const res = await fetch("/api/stripe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                amount: convert(product!.price),
+                currency: currency.code,
+                productId: product!.id,
+                productName: product!.name,
+                customerName: userDetails.name,
+                customerEmail: userDetails.email,
+                customerContact: userDetails.contact,
+            }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.url) {
+            alert(data.error || "Failed to initiate Stripe checkout.");
             return;
         }
+        // Save pending info to sessionStorage so orders page can save after redirect
+        sessionStorage.setItem("stripe_pending", JSON.stringify({
+            productId: product!.id,
+            productName: product!.name,
+            amount: product!.price,
+            currency: currency.code,
+            customerInfo: userDetails,
+        }));
+        window.location.href = data.url;
+    };
 
+    const handleCheckout = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsProcessing(true);
         try {
-            // Create Order on Server
-            const response = await fetch("/api/razorpay", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amount: displayPrice, currency: currency }),
-            });
-            const order = await response.json();
-
-            if (order.error) {
-                alert("Server Error: " + order.error);
-                setIsProcessing(false);
-                return;
+            if (gateway === "stripe") {
+                await processStripe();
+            } else {
+                await processRazorpay();
             }
-
-            const options = {
-                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-                amount: order.amount,
-                currency: order.currency,
-                name: "Nexus Software",
-                description: product!.name,
-                order_id: order.id,
-                handler: async function (response: any) {
-                    try {
-                        // Save Order to Firestore
-                        await addDoc(collection(db, "orders"), {
-                            orderId: order.id,
-                            paymentId: response.razorpay_payment_id,
-                            productId: product!.id,
-                            productName: product!.name,
-                            amount: displayPrice,
-                            currency: order.currency,
-                            status: "paid",
-                            customerInfo: userDetails,
-                            createdAt: new Date().toISOString(),
-                        });
-
-                        // Increment Product Purchase Count
-                        const productRef = doc(db, "products", product!.id);
-                        await updateDoc(productRef, {
-                            purchases: increment(1)
-                        });
-
-                        alert(`Payment Successful! Order ID: ${order.id}`);
-                        setShowPaymentModal(false);
-                        // Reset form
-                        setUserDetails({ name: "", email: "", contact: "" });
-                    } catch (error) {
-                        console.error("Failed to save order", error);
-                        alert("Payment successful but failed to record order. Please contact support.");
-                    }
-                },
-                prefill: {
-                    name: userDetails.name,
-                    email: userDetails.email,
-                    contact: userDetails.contact.replace(/\D/g, ""), // Remove non-digits (spaces, +, etc) to ensure Razorpay accepts it
-                },
-                theme: {
-                    color: "#2563EB",
-                },
-            };
-
-            const paymentObject = new (window as unknown as { Razorpay: new (options: any) => any }).Razorpay(options);
-            paymentObject.open();
-        } catch (error) {
-            console.error("Payment processing error:", error);
-            alert("Something went wrong. Please try again.");
+        } catch {
+            alert("Failed to initiate payment. Please try again.");
         } finally {
             setIsProcessing(false);
         }
     };
 
-    if (loading) {
+    if (isLoading || !product) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <CircleNotch className="w-8 h-8 text-foreground animate-spin opacity-20" weight="bold" />
             </div>
         );
     }
 
-    if (!product) {
-        return (
-            <div className="min-h-screen flex flex-col items-center justify-center text-center px-4">
-                <h1 className="text-3xl font-bold mb-4">Product Not Found</h1>
-                <Link href="/products" className="text-blue-400 hover:text-blue-300 flex items-center gap-2">
-                    <ArrowLeft className="w-4 h-4" /> Back to Products
-                </Link>
-            </div>
-        );
-    }
+    const displayPrice = formatCurrency(product.price);
 
     return (
-        <div className="min-h-screen py-20 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-7xl mx-auto">
-                <Link href="/products" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors">
-                    <ArrowLeft className="w-4 h-4" /> Back to Products
-                </Link>
+        <div className="min-h-screen bg-background">
+            <div className="container-pro px-6 sm:px-8 lg:px-12 pb-32">
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
-                    {/* Product Image */}
+                {/* Breadcrumb */}
+                <nav className="py-8">
+                    <Link href="/products" className="inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors tracking-[0.08em] uppercase group">
+                        <CaretLeft size={12} weight="bold" className="group-hover:-translate-x-0.5 transition-transform" />
+                        Back to Products
+                    </Link>
+                </nav>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-16 xl:gap-24 items-start">
+
+                    {/* ── LEFT: Image ── */}
                     <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="rounded-2xl overflow-hidden glass border border-white/10 shadow-2xl"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
                     >
-                        <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                            className="w-full h-auto object-cover transform hover:scale-105 transition-transform duration-700"
-                        />
+                        <div className="rounded-[28px] overflow-hidden bg-muted border border-border aspect-[4/3] relative group">
+                            <img
+                                src={product.imageUrl}
+                                alt={product.name}
+                                className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-[2s] ease-out"
+                            />
+                        </div>
+
+                        {(product.longDescription || product.description) && (
+                            <div className="mt-10 space-y-6">
+                                {(product.longDescription || product.description).split('\n\n').map((para, pIdx) => {
+                                    const isFeatureList = para.includes('✅') || para.includes('❌') || para.includes('💎');
+                                    if (isFeatureList) {
+                                        return (
+                                            <div key={pIdx} className="card-pro p-6 space-y-3">
+                                                {para.split('\n').filter(l => l.trim()).map((line, lIdx) => (
+                                                    <div key={lIdx} className="flex items-start gap-3 text-[14px] text-muted-foreground leading-relaxed">
+                                                        <span className="flex-shrink-0 text-foreground/60 mt-0.5">{line.trim().match(/^[^\w\s]/)?.[0] || '•'}</span>
+                                                        <span>{line.replace(/^[^\w\s]/, '').trim()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <div key={pIdx} className="space-y-1">
+                                            {para.split('\n').filter(l => l.trim()).map((line, lIdx) => {
+                                                const hasEmojiHeader = /^[\uD800-\uDBFF][\uDC00-\uDFFF]|^[^\w\s]/.test(line.trim());
+                                                if (hasEmojiHeader) {
+                                                    const [emoji, ...rest] = line.trim().split(' ');
+                                                    return (
+                                                        <h4 key={lIdx} className="text-[15px] font-bold text-foreground flex items-center gap-2 pt-4 first:pt-0">
+                                                            <span className="opacity-50">{emoji}</span>
+                                                            {rest.join(' ')}
+                                                        </h4>
+                                                    );
+                                                }
+                                                return <p key={lIdx} className="text-[15px] text-muted-foreground leading-relaxed">{line}</p>;
+                                            })}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </motion.div>
 
-                    {/* Product Info */}
+                    {/* ── RIGHT: Info panel ── */}
                     <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="space-y-8"
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
+                        className="lg:sticky lg:top-28 space-y-6"
                     >
+                        <div className="flex items-center gap-2">
+                            <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.16em] uppercase bg-secondary border border-border text-foreground/70">
+                                {product.category}
+                            </span>
+                            {product.version && (
+                                <span className="text-[11px] font-mono text-muted-foreground/50 font-semibold uppercase tracking-widest">
+                                    v{product.version}
+                                </span>
+                            )}
+                        </div>
+
                         <div>
-                            <div className="flex items-center justify-between mb-4">
-                                <span className="text-sm font-medium text-blue-400 bg-blue-400/10 px-3 py-1 rounded-full border border-blue-400/20">
-                                    {product.category}
-                                </span>
-                                <span className="text-3xl font-bold text-white">
-                                    {currency === "USD" ? "$" : "₹"}{displayPrice.toLocaleString()}
-                                </span>
-                            </div>
-                            <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+                            <h1 className="text-[32px] sm:text-[38px] font-bold tracking-tight leading-[1.1] text-foreground">
                                 {product.name}
                             </h1>
-                            <p className="text-lg text-gray-400 leading-relaxed whitespace-pre-wrap">
-                                {product.longDescription || product.description}
+                            <p className="mt-3 text-[15px] text-muted-foreground leading-relaxed">
+                                {product.description}
                             </p>
                         </div>
 
-                        <div className="space-y-4">
-                            <h3 className="text-xl font-semibold text-white">Key Features</h3>
-                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                {product.features.map((feature, index) => (
-                                    <li key={index} className="flex items-center gap-2 text-gray-300">
-                                        <Check className="w-5 h-5 text-green-400 flex-shrink-0" />
-                                        {feature}
-                                    </li>
-                                ))}
-                            </ul>
+                        <div className="py-4 border-y border-border flex items-center justify-between">
+                            <span className="text-[13px] font-semibold text-muted-foreground uppercase tracking-[0.1em]">License Price</span>
+                            <span className="text-[28px] font-mono font-bold text-foreground tracking-tight">
+                                {displayPrice}
+                            </span>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-white/10">
+                        {product.features.length > 0 && (
+                            <div className="space-y-3">
+                                <p className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted-foreground">What's included</p>
+                                <ul className="space-y-2">
+                                    {product.features.map((feature, i) => (
+                                        <li key={i} className="flex items-start gap-2.5 text-[14px] text-foreground/80">
+                                            <Check size={14} weight="bold" className="text-accent mt-0.5 shrink-0" />
+                                            {feature}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        <div className="space-y-3 pt-2">
                             <button
-                                onClick={handleBuyClick}
-                                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-bold py-4 px-8 rounded-xl shadow-lg shadow-blue-500/20 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center gap-2"
+                                onClick={() => setShowPaymentModal(true)}
+                                className="w-full btn-apple btn-apple-primary py-4 text-[14px] font-semibold"
                             >
-                                <ShoppingCart className="w-5 h-5" /> Buy Now
+                                Acquire License
                             </button>
                             {product.demoUrl ? (
                                 <Link
                                     href={product.demoUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="flex-1 glass hover:bg-white/10 text-white font-bold py-4 px-8 rounded-xl border border-white/10 transition-all flex items-center justify-center gap-2"
+                                    className="w-full btn-apple btn-apple-secondary py-3.5 text-[14px] flex items-center justify-center gap-2"
                                 >
-                                    <Download className="w-5 h-5" /> View Demo
+                                    <ArrowSquareOut size={15} weight="bold" /> Live Preview
                                 </Link>
                             ) : (
-                                <button disabled className="flex-1 glass opacity-50 cursor-not-allowed text-white font-bold py-4 px-8 rounded-xl border border-white/10 flex items-center justify-center gap-2">
-                                    <Download className="w-5 h-5" /> Demo Unavailable
+                                <button disabled className="w-full btn-apple bg-secondary/50 border border-border text-muted-foreground/40 cursor-not-allowed py-3.5 text-[14px]">
+                                    No Demo Available
                                 </button>
                             )}
                         </div>
 
-                        <p className="text-xs text-center text-gray-500 mt-4">
-                            Secure payment processed via Razorpay. Value Added Tax may apply.
-                        </p>
+                        {/* Gateway indicator */}
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Powered by {gateway === "stripe" ? "Stripe" : "Razorpay"}
+                        </div>
+
+                        {product.documentationUrl && (
+                            <Link
+                                href={product.documentationUrl}
+                                target="_blank"
+                                className="flex items-center justify-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 group"
+                            >
+                                <BookOpen size={14} weight="bold" className="group-hover:scale-110 transition-transform" />
+                                View Documentation
+                            </Link>
+                        )}
                     </motion.div>
                 </div>
-
-                {/* Payment Modal */}
-                <AnimatePresence>
-                    {showPaymentModal && (
-                        <>
-                            <motion.div
-                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-                                onClick={() => !isProcessing && setShowPaymentModal(false)}
-                            />
-                            <motion.div
-                                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                                className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-                            >
-                                <div className="glass w-full max-w-md rounded-2xl border border-white/10 pointer-events-auto shadow-2xl p-6 relative">
-                                    <button
-                                        onClick={() => setShowPaymentModal(false)}
-                                        disabled={isProcessing}
-                                        className="absolute top-4 right-4 text-gray-400 hover:text-white disabled:opacity-50"
-                                    >
-                                        <X className="w-6 h-6" />
-                                    </button>
-
-                                    <h2 className="text-xl font-bold text-white mb-6">Enter Your Details</h2>
-                                    <form onSubmit={processPayment} className="space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-400 mb-1">Full Name</label>
-                                            <input
-                                                required
-                                                type="text"
-                                                value={userDetails.name}
-                                                onChange={e => setUserDetails({ ...userDetails, name: e.target.value })}
-                                                className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                                                placeholder="John Doe"
-                                                disabled={isProcessing}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-400 mb-1">Email Address</label>
-                                            <input
-                                                required
-                                                type="email"
-                                                value={userDetails.email}
-                                                onChange={e => setUserDetails({ ...userDetails, email: e.target.value })}
-                                                className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                                                placeholder="john@example.com"
-                                                disabled={isProcessing}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-400 mb-1">Phone Number</label>
-                                            <input
-                                                required
-                                                type="tel"
-                                                value={userDetails.contact}
-                                                onChange={e => setUserDetails({ ...userDetails, contact: e.target.value })}
-                                                className="w-full bg-black/20 border border-white/10 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                                                placeholder="+91 9999999999"
-                                                disabled={isProcessing}
-                                            />
-                                        </div>
-
-                                        <button
-                                            type="submit"
-                                            disabled={isProcessing}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold transition-all shadow-lg hover:shadow-blue-500/25 mt-4 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
-                                        >
-                                            {isProcessing ? "Processing..." : "Proceed to Pay"}
-                                            {!isProcessing && <ArrowRight className="w-4 h-4" />}
-                                        </button>
-                                    </form>
-                                </div>
-                            </motion.div>
-                        </>
-                    )}
-                </AnimatePresence>
             </div>
+
+            {/* ── Payment Modal ── */}
+            <AnimatePresence>
+                {showPaymentModal && (
+                    <>
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-background/80 backdrop-blur-xl z-[60]"
+                            onClick={() => !isProcessing && setShowPaymentModal(false)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, y: 40, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 40, scale: 0.98 }}
+                            transition={{ type: "spring", damping: 28, stiffness: 240 }}
+                            className="fixed inset-0 z-[70] flex items-center justify-center p-6 pointer-events-none"
+                        >
+                            <div className="bg-card w-full max-w-md rounded-[24px] border border-border pointer-events-auto shadow-2xl p-8 relative">
+                                <button
+                                    onClick={() => setShowPaymentModal(false)}
+                                    disabled={isProcessing}
+                                    className="absolute top-6 right-6 w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                    <X size={16} weight="bold" />
+                                </button>
+
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <h2 className="text-[22px] font-bold text-foreground tracking-tight">Checkout</h2>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground uppercase tracking-wider">
+                                            via {gateway === "stripe" ? "Stripe" : "Razorpay"}
+                                        </span>
+                                    </div>
+                                    <p className="text-[14px] text-muted-foreground">
+                                        {product.name} — <span className="font-semibold text-foreground">{displayPrice}</span>
+                                    </p>
+                                </div>
+
+                                {gateway === "stripe" && (
+                                    <div className="mb-4 px-3 py-2.5 rounded-xl bg-[#635BFF]/[0.07] border border-[#635BFF]/20 text-[12px] text-muted-foreground">
+                                        You'll be redirected to Stripe's secure checkout after filling this form.
+                                    </div>
+                                )}
+
+                                <form onSubmit={handleCheckout} className="space-y-4">
+                                    {[
+                                        { label: "Full Name", key: "name", type: "text", placeholder: "Your name" },
+                                        { label: "Email", key: "email", type: "email", placeholder: "your@email.com" },
+                                        { label: "Phone", key: "contact", type: "tel", placeholder: "+1 (000) 000-0000" },
+                                    ].map(({ label, key, type, placeholder }) => (
+                                        <div key={key} className="space-y-1.5">
+                                            <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{label}</label>
+                                            <input
+                                                required
+                                                type={type}
+                                                value={userDetails[key as keyof typeof userDetails]}
+                                                onChange={e => setUserDetails({ ...userDetails, [key]: e.target.value })}
+                                                placeholder={placeholder}
+                                                disabled={isProcessing}
+                                                className="w-full bg-background border border-border rounded-xl px-4 py-3 text-[14px] text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-accent/50 focus:ring-2 focus:ring-accent/10 transition-all"
+                                            />
+                                        </div>
+                                    ))}
+
+                                    <button
+                                        type="submit"
+                                        disabled={isProcessing}
+                                        className="btn-apple btn-apple-primary w-full py-4 text-[14px] mt-2 disabled:opacity-50"
+                                    >
+                                        {isProcessing ? (
+                                            <CircleNotch size={18} className="animate-spin" weight="bold" />
+                                        ) : gateway === "stripe" ? (
+                                            <>Continue to Stripe <ArrowRight size={16} weight="bold" /></>
+                                        ) : (
+                                            <>Pay & Get License <ArrowRight size={16} weight="bold" /></>
+                                        )}
+                                    </button>
+                                </form>
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
         </div>
     );
 }

@@ -1,358 +1,474 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Package, Calendar, DollarSign, ArrowRight, Loader2, X, Receipt, CreditCard, User, Mail, Phone } from "lucide-react";
-import { collection, query, where, getDocs, orderBy as firestoreOrderBy } from "firebase/firestore";
+import {
+  MagnifyingGlass,
+  Package,
+  ArrowRight,
+  CircleNotch,
+  X,
+  Receipt,
+  CalendarBlank,
+  CheckCircle,
+  Copy,
+  Check,
+} from "@phosphor-icons/react";
+import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import { generateLicense } from "@/lib/licenses";
 
 interface Order {
-    id: string;
-    productId: string;
-    productName: string;
-    amount: number;
-    currency: string;
-    status: string;
-    createdAt: string;
-    orderId: string;
-    paymentId?: string;
-    customerInfo?: {
-        name: string;
-        email: string;
-        contact: string;
-    };
+  id: string;
+  productId: string;
+  productName: string;
+  amount: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+  orderId: string;
+  paymentId?: string;
+  gateway?: string;
+  customerInfo?: {
+    name: string;
+    email: string;
+    contact: string;
+  };
+}
+
+interface StripeSuccessData {
+  licenseKey: string;
+  productName: string;
+  email: string;
+}
+
+function OrderHistoryContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [email, setEmail] = useState("");
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
+  const [stripeProcessing, setStripeProcessing] = useState(false);
+  const [stripeSuccess, setStripeSuccess] = useState<StripeSuccessData | null>(null);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleStripeReturn = useCallback(async (sessionId: string) => {
+    setStripeProcessing(true);
+    setStripeError(null);
+    try {
+      const res = await fetch(`/api/stripe/verify?session_id=${sessionId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Verification failed");
+
+      // Get pending order info from sessionStorage
+      const pending = JSON.parse(sessionStorage.getItem("stripe_pending") || "null");
+      const productId = data.metadata?.productId || pending?.productId || "";
+      const productName = data.metadata?.productName || pending?.productName || "Unknown Product";
+      const customerName = data.metadata?.customerName || pending?.customerInfo?.name || "";
+      const customerEmail = data.customerEmail || data.metadata?.customerEmail || pending?.customerInfo?.email || "";
+      const customerContact = data.metadata?.customerContact || pending?.customerInfo?.contact || "";
+      const amount = pending?.amount ?? data.amount;
+      const currency = pending?.currency ?? data.currency;
+
+      // Check if order already saved (idempotency)
+      const existing = await getDocs(query(collection(db, "orders"), where("orderId", "==", sessionId)));
+      let licenseKey: string;
+      if (!existing.empty) {
+        // Order already exists — fetch its license
+        const existingLic = await getDocs(query(collection(db, "licenses"), where("orderId", "==", sessionId)));
+        licenseKey = existingLic.empty ? "Check your dashboard" : existingLic.docs[0].data().licenseKey;
+      } else {
+        // Save new order
+        await addDoc(collection(db, "orders"), {
+          orderId: sessionId,
+          paymentId: data.paymentId,
+          productId,
+          productName,
+          customerInfo: { name: customerName, email: customerEmail, contact: customerContact },
+          amount,
+          currency,
+          gateway: "stripe",
+          status: "paid",
+          createdAt: new Date().toISOString(),
+        });
+        if (productId) {
+          await updateDoc(doc(db, "products", productId), { purchases: increment(1) }).catch(() => {});
+        }
+        const result = await generateLicense({ productId, productName, customerEmail, orderId: sessionId });
+        licenseKey = result.licenseKey;
+      }
+
+      sessionStorage.removeItem("stripe_pending");
+      setStripeSuccess({ licenseKey, productName, email: customerEmail });
+      // Remove query param from URL
+      router.replace("/orders", { scroll: false });
+    } catch (err: any) {
+      setStripeError(err.message || "Failed to process payment. Contact support.");
+    } finally {
+      setStripeProcessing(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const sessionId = searchParams.get("stripe_session_id");
+    if (sessionId) handleStripeReturn(sessionId);
+  }, [searchParams, handleStripeReturn]);
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setIsLoading(true);
+    setHasSearched(true);
+    setOrders([]);
+    try {
+      const q = query(collection(db, "orders"), where("customerInfo.email", "==", email.trim()));
+      const snap = await getDocs(q);
+      const found = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+      found.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setOrders(found);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to fetch orders. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const copyLicense = (key: string) => {
+    navigator.clipboard.writeText(key).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const formatAmount = (amount: number, currency: string) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(amount);
+
+  return (
+    <div className="min-h-[100dvh] bg-background overflow-x-hidden">
+      <div className="container-pro section-padding">
+
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center mb-16"
+        >
+          <p className="text-label mb-4">Order history</p>
+          <h1 className="text-display gradient-text mb-5">Track your orders.</h1>
+          <p className="text-body-large text-muted-foreground max-w-[440px] mx-auto">
+            Enter the email address used during checkout to view your purchase history.
+          </p>
+        </motion.div>
+
+        {/* Stripe processing / success / error states */}
+        <AnimatePresence>
+          {stripeProcessing && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="max-w-md mx-auto mb-10 card-pro p-6 flex items-center gap-4"
+            >
+              <CircleNotch size={20} className="animate-spin text-accent shrink-0" />
+              <div>
+                <p className="text-[15px] font-semibold">Confirming your payment…</p>
+                <p className="text-[13px] text-muted-foreground mt-0.5">Saving order & generating your license key.</p>
+              </div>
+            </motion.div>
+          )}
+
+          {stripeError && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="max-w-md mx-auto mb-10 card-pro p-6 border border-red-500/20"
+            >
+              <p className="text-[15px] font-semibold text-red-500">Payment verification failed</p>
+              <p className="text-[13px] text-muted-foreground mt-1">{stripeError}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Search */}
+        <motion.form
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          onSubmit={handleSearch}
+          className="max-w-md mx-auto mb-16"
+        >
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <MagnifyingGlass size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
+                required
+                className="input-apple pl-11"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isLoading || !email}
+              className="btn-pro btn-pro-primary px-6 shrink-0 disabled:opacity-40"
+            >
+              {isLoading ? <CircleNotch size={16} className="animate-spin" /> : "Track"}
+            </button>
+          </div>
+        </motion.form>
+
+        {/* Results */}
+        <div className="max-w-2xl mx-auto space-y-4">
+          <AnimatePresence mode="popLayout">
+            {hasSearched && !isLoading && orders.length === 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center py-20 space-y-4"
+              >
+                <div className="w-16 h-16 rounded-3xl bg-foreground/[0.04] border border-border flex items-center justify-center mx-auto">
+                  <Package size={24} weight="thin" className="text-muted-foreground/40" />
+                </div>
+                <p className="text-muted-foreground font-medium">No orders found for this email address.</p>
+              </motion.div>
+            )}
+
+            {orders.map((order, i) => (
+              <motion.div
+                key={order.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                className="card-pro p-6 flex items-center justify-between gap-6 group cursor-pointer"
+                onClick={() => setSelectedOrder(order)}
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-accent/[0.08] border border-accent/[0.12] flex items-center justify-center">
+                    <Package size={20} weight="regular" className="text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-[16px] font-semibold">{order.productName}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                        <CalendarBlank size={11} />
+                        {new Date(order.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        order.status === "paid"
+                          ? "bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400/80 border-emerald-500/[0.15]"
+                          : "bg-muted text-muted-foreground border-border"
+                      }`}>
+                        {order.status}
+                      </span>
+                      {order.gateway && (
+                        <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">{order.gateway}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  <span className="text-[18px] font-bold font-mono text-muted-foreground/60">
+                    {formatAmount(order.amount, order.currency)}
+                  </span>
+                  <div className="w-8 h-8 rounded-full bg-foreground/[0.05] flex items-center justify-center text-muted-foreground group-hover:text-foreground transition-colors">
+                    <ArrowRight size={14} />
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* ── Stripe Success Modal ── */}
+      <AnimatePresence>
+        {stripeSuccess && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-background/80 backdrop-blur-xl z-50"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 16 }}
+              transition={{ type: "spring", damping: 28, stiffness: 320 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none"
+            >
+              <div className="apple-card w-full max-w-md pointer-events-auto p-8 text-center space-y-6">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                  <CheckCircle size={32} weight="fill" className="text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="text-[22px] font-bold tracking-tight">Payment Successful!</h2>
+                  <p className="text-[14px] text-muted-foreground mt-2">
+                    Your license for <span className="font-semibold text-foreground">{stripeSuccess.productName}</span> is ready.
+                  </p>
+                </div>
+
+                <div className="bg-secondary/50 rounded-2xl p-5 space-y-2 text-left">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">License Key</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <code className="text-[17px] font-mono font-bold tracking-widest text-foreground">
+                      {stripeSuccess.licenseKey}
+                    </code>
+                    <button
+                      onClick={() => copyLicense(stripeSuccess.licenseKey)}
+                      className="w-9 h-9 rounded-xl bg-secondary border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    >
+                      {copied ? <Check size={14} weight="bold" className="text-emerald-500" /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-muted-foreground">Sent to {stripeSuccess.email}</p>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setStripeSuccess(null)}
+                    className="btn-apple btn-apple-primary flex-1 py-3 text-[14px]"
+                  >
+                    Done
+                  </button>
+                  <button
+                    onClick={() => { setEmail(stripeSuccess.email); setStripeSuccess(null); }}
+                    className="btn-apple btn-apple-secondary flex-1 py-3 text-[14px]"
+                  >
+                    View Orders
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Receipt Modal */}
+      <AnimatePresence>
+        {selectedOrder && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-background/80 backdrop-blur-xl z-50"
+              onClick={() => setSelectedOrder(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.97, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97, y: 16 }}
+              transition={{ type: "spring", damping: 28, stiffness: 320 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-6 pointer-events-none"
+            >
+              <div id="receipt-content" className="apple-card w-full max-w-md pointer-events-auto shadow-[0_32px_80px_rgba(0,0,0,0.15)] dark:shadow-[0_32px_80px_rgba(0,0,0,0.6)]">
+                <div className="flex justify-between items-center p-7 border-b border-border">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-accent/[0.08] flex items-center justify-center">
+                      <Receipt size={18} weight="regular" className="text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-[15px] font-bold">Payment Receipt</p>
+                      <p className="text-[11px] text-muted-foreground font-mono">{selectedOrder.paymentId || "—"}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedOrder(null)}
+                    className="no-print w-9 h-9 rounded-full bg-foreground/[0.05] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+
+                <div className="p-7 space-y-6">
+                  <div className="bg-secondary/50 rounded-2xl p-5 flex justify-between items-center">
+                    <span className="text-muted-foreground text-[14px]">Amount Paid</span>
+                    <span className="text-[24px] font-bold">{formatAmount(selectedOrder.amount, selectedOrder.currency)}</span>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-label mb-3">Transaction Details</p>
+                    {[
+                      { label: "Product", value: selectedOrder.productName },
+                      { label: "Status", value: selectedOrder.status.toUpperCase() },
+                      { label: "Gateway", value: selectedOrder.gateway?.toUpperCase() || "—" },
+                      { label: "Date", value: new Date(selectedOrder.createdAt).toLocaleString() },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <span className="text-muted-foreground text-[13px]">{label}</span>
+                        <span className="text-[13px] font-medium">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedOrder.customerInfo && (
+                    <div className="space-y-3 pt-4 border-t border-border">
+                      <p className="text-label mb-3">Customer</p>
+                      {[
+                        { label: "Name", value: selectedOrder.customerInfo.name },
+                        { label: "Email", value: selectedOrder.customerInfo.email },
+                        { label: "Contact", value: selectedOrder.customerInfo.contact },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex justify-between items-center">
+                          <span className="text-muted-foreground text-[13px]">{label}</span>
+                          <span className="text-[13px] font-medium">{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="no-print p-7 border-t border-border">
+                  <button
+                    onClick={() => window.print()}
+                    className="btn-pro btn-pro-primary w-full py-3 text-[13px]"
+                  >
+                    Print Receipt
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden; }
+          #receipt-content, #receipt-content * { visibility: visible; }
+          #receipt-content {
+            position: fixed; left: 0; top: 0;
+            width: 100vw; padding: 20px; margin: 0;
+            max-width: none !important; overflow: visible !important;
+            background: white !important; color: black !important;
+            border: none !important; box-shadow: none !important;
+            border-radius: 0 !important; z-index: 9999;
+          }
+          .no-print { display: none !important; }
+          html, body { height: 100vh !important; overflow: visible !important; background: white !important; }
+          @page { margin: 0; size: auto; }
+        }
+      `}</style>
+    </div>
+  );
 }
 
 export default function OrderHistoryPage() {
-    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-    const [email, setEmail] = useState("");
-    const [orders, setOrders] = useState<Order[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
-
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!email.trim()) return;
-
-        setIsLoading(true);
-        setHasSearched(true);
-        setOrders([]);
-
-        try {
-            // Query by email
-            const q = query(
-                collection(db, "orders"),
-                where("customerInfo.email", "==", email.trim())
-            );
-
-            const querySnapshot = await getDocs(q);
-            const foundOrders = querySnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            } as Order));
-
-            // Sort client-side to avoid compound index requirement for now
-            foundOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-            setOrders(foundOrders);
-        } catch (error) {
-            console.error("Error fetching orders:", error);
-            alert("Failed to fetch orders. Please try again.");
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    return (
-        <main className="min-h-screen bg-[#0A0A0A] text-white selection:bg-blue-500/30">
-            <Navbar />
-
-            <div className="pt-32 pb-20 px-4 sm:px-6 lg:px-8">
-                <div className="max-w-4xl mx-auto space-y-12">
-
-                    {/* Header */}
-                    <div className="text-center space-y-4">
-                        <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
-                            Track Your Orders
-                        </h1>
-                        <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-                            Enter the email address used during checkout to view your purchase history and license details.
-                        </p>
-                    </div>
-
-                    {/* Search Form */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="max-w-md mx-auto"
-                    >
-                        <form onSubmit={handleSearch} className="relative group">
-                            <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                            <div className="relative flex gap-2">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="Enter your email address..."
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white focus:border-blue-500/50 focus:bg-white/10 outline-none transition-all"
-                                    />
-                                </div>
-                                <button
-                                    type="submit"
-                                    disabled={isLoading || !email}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                >
-                                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Track"}
-                                </button>
-                            </div>
-                        </form>
-                    </motion.div>
-
-                    {/* Results */}
-                    <div className="space-y-6">
-                        <AnimatePresence mode="popLayout">
-                            {hasSearched && orders.length === 0 && !isLoading && (
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="text-center py-12 text-gray-500"
-                                >
-                                    No orders found for this email.
-                                </motion.div>
-                            )}
-
-                            {orders.map((order, index) => (
-                                <motion.div
-                                    key={order.id}
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: index * 0.1 }}
-                                    className="glass border border-white/5 p-6 rounded-2xl hover:border-white/10 transition-all group"
-                                >
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                                        <div className="flex items-start gap-4">
-                                            <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400 group-hover:scale-110 transition-transform">
-                                                <Package className="w-6 h-6" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-xl font-semibold text-white mb-1">
-                                                    {order.productName}
-                                                </h3>
-                                                <div className="flex flex-wrap gap-4 text-sm text-gray-400">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Calendar className="w-4 h-4" />
-                                                        {new Date(order.createdAt).toLocaleDateString()}
-                                                    </div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                                        {order.status.toUpperCase()}
-                                                    </div>
-                                                    <div className="text-gray-500 font-mono text-xs pt-0.5">
-                                                        ID: {order.orderId}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-6 pl-14 md:pl-0">
-                                            <div className="text-2xl font-bold text-white">
-                                                {/* Convert/Format currency if needed, assuming stored in whole units or needs /100 depending on storage. 
-                                                   Razorpay API returns paise, but our mock products are whole dollars.
-                                                   Let's assume stored as is from product.price for now.
-                                                */}
-                                                {new Intl.NumberFormat('en-IN', { style: 'currency', currency: order.currency || 'USD' }).format(order.amount)}
-                                            </div>
-                                            <button
-                                                onClick={() => setSelectedOrder(order)}
-                                                className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors"
-                                            >
-                                                <ArrowRight className="w-5 h-5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </AnimatePresence>
-                    </div>
-
-                    <AnimatePresence>
-                        {selectedOrder && (
-                            <>
-                                <motion.div
-                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                    className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50"
-                                    onClick={() => setSelectedOrder(null)}
-                                />
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                                    className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-                                >
-                                    <div id="receipt-content" className="glass w-full max-w-lg rounded-2xl border border-white/10 pointer-events-auto overflow-hidden shadow-2xl">
-                                        {/* Modal Header */}
-                                        <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-                                                    <Receipt className="w-5 h-5" />
-                                                </div>
-                                                <div>
-                                                    <h2 className="text-xl font-bold text-white">Payment Receipt</h2>
-                                                    <p className="text-sm text-gray-400">{selectedOrder.orderId}</p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => setSelectedOrder(null)}
-                                                className="text-gray-400 hover:text-white transition-colors no-print"
-                                            >
-                                                <X className="w-6 h-6" />
-                                            </button>
-                                        </div>
-
-                                        {/* Modal Content */}
-                                        <div className="p-6 space-y-6">
-                                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/10">
-                                                <span className="text-gray-400">Amount Paid</span>
-                                                <span className="text-2xl font-bold text-white">
-                                                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: selectedOrder.currency || 'USD' }).format(selectedOrder.amount)}
-                                                </span>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">Transaction Details</h3>
-                                                <div className="space-y-3">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-gray-400 flex items-center gap-2"><CreditCard className="w-4 h-4" /> Payment ID</span>
-                                                        <span className="text-white font-mono text-sm">{selectedOrder.paymentId || 'N/A'}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-gray-400 flex items-center gap-2"><Calendar className="w-4 h-4" /> Date</span>
-                                                        <span className="text-white text-sm">{new Date(selectedOrder.createdAt).toLocaleString()}</span>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-gray-400 flex items-center gap-2"><div className="w-4 h-4 flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-emerald-500" /></div> Status</span>
-                                                        <span className="text-emerald-400 font-medium text-sm px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">{selectedOrder.status.toUpperCase()}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {selectedOrder.customerInfo && (
-                                                <div className="space-y-4 pt-4 border-t border-white/10">
-                                                    <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wider">Customer Information</h3>
-                                                    <div className="space-y-3">
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-gray-400 flex items-center gap-2"><User className="w-4 h-4" /> Name</span>
-                                                            <span className="text-white text-sm">{selectedOrder.customerInfo.name}</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-gray-400 flex items-center gap-2"><Mail className="w-4 h-4" /> Email</span>
-                                                            <span className="text-white text-sm">{selectedOrder.customerInfo.email}</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className="text-gray-400 flex items-center gap-2"><Phone className="w-4 h-4" /> Contact</span>
-                                                            <span className="text-white text-sm">{selectedOrder.customerInfo.contact}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        <div className="p-6 bg-white/5 border-t border-white/10 no-print">
-                                            <button
-                                                onClick={() => window.print()}
-                                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2"
-                                            >
-                                                <Receipt className="w-4 h-4" /> Print Receipt
-                                            </button>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            </>
-                        )}
-                    </AnimatePresence>
-                </div>
-
-            </div>
-
-            <Footer />
-
-            <style jsx global>{`
-                @media print {
-                    /* 1. Hide everything by default */
-                    body * {
-                        visibility: hidden;
-                    }
-
-                    /* 2. Show only the receipt and its children */
-                    #receipt-content,
-                    #receipt-content * {
-                        visibility: visible;
-                    }
-
-                    /* 3. Position receipt at top-left of the page */
-                    #receipt-content {
-                        position: fixed;
-                        left: 0;
-                        top: 0;
-                        width: 100vw;
-                        height: 100vh;
-                        padding: 20px;
-                        margin: 0;
-                        
-                        /* 4. Reset constraints that might cause clipping */
-                        max-width: none !important;
-                        max-height: none !important;
-                        overflow: visible !important;
-                        
-                        /* 5. styling for print */
-                        background: white !important;
-                        color: black !important;
-                        border: none !important;
-                        box-shadow: none !important;
-                        border-radius: 0 !important;
-                        transform: none !important;
-                        z-index: 9999;
-                        display: block !important;
-                    }
-
-                    /* 6. Force text colors to black */
-                    #receipt-content .text-white, 
-                    #receipt-content .text-gray-400,
-                    #receipt-content .text-blue-400,
-                    #receipt-content .text-emerald-400 {
-                        color: black !important;
-                    }
-
-                    /* 7. Hide background elements/borders */
-                    #receipt-content .glass,
-                    #receipt-content .bg-white\\/5 {
-                        background: transparent !important;
-                        border: 1px solid #ddd !important;
-                    }
-
-                    /* 8. Hide unwanted buttons */
-                    .no-print {
-                        display: none !important;
-                    }
-
-                    /* 9. Ensure body doesn't scroll/clip */
-                    html, body {
-                        height: 100vh !important;
-                        overflow: visible !important;
-                        background: white !important;
-                    }
-                    
-                    @page {
-                        margin: 0;
-                        size: auto;
-                    }
-                }
-            `}</style>
-        </main >
-    );
+  return (
+    <Suspense fallback={
+      <div className="min-h-[100dvh] flex items-center justify-center bg-background">
+        <CircleNotch className="w-8 h-8 text-foreground animate-spin opacity-20" weight="bold" />
+      </div>
+    }>
+      <OrderHistoryContent />
+    </Suspense>
+  );
 }

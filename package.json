@@ -9,14 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@stripe/stripe-js": "^9.3.1",
     "firebase": "^12.9.0",
     "framer-motion": "^12.34.1",
     "lucide-react": "^0.574.0",
     "next": "16.1.6",
+    "next-themes": "^0.4.6",
     "razorpay": "^2.9.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "shortid": "^2.2.17"
+    "shortid": "^2.2.17",
+    "stripe": "^22.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
