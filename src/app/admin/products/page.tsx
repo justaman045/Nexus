@@ -55,7 +55,7 @@ export default function AdminProducts() {
   };
 
   const handleOpenAdd = () => {
-    setCurrentProduct({ name: "", description: "", longDescription: "", price: 0, imageUrl: "", demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
+    setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
     setIsModalOpen(true);
   };
 
@@ -67,7 +67,11 @@ export default function AdminProducts() {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const productToSave = { ...currentProduct, features: currentProduct.features?.map((f) => f.trim()).filter(Boolean) || [] };
+      const productToSave = {
+        ...currentProduct,
+        features: currentProduct.features?.map((f) => f.trim()).filter(Boolean) || [],
+        descriptionType: currentProduct.descriptionType ?? "plain",
+      };
       if (currentProduct.id) {
         await updateProduct(currentProduct.id, productToSave);
       } else {
@@ -267,8 +271,39 @@ export default function AdminProducts() {
                       <input type="text" value={currentProduct.documentationUrl || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, documentationUrl: e.target.value })} className={inputCls} placeholder="https://docs..." />
                     </div>
                     <div className="col-span-2">
-                      <label className={labelCls}>Description</label>
-                      <textarea rows={4} value={currentProduct.longDescription || currentProduct.description || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, longDescription: e.target.value, description: e.target.value })} className={inputCls + " resize-none"} placeholder="Product description..." />
+                      <div className="flex items-center justify-between mb-2">
+                        <label className={labelCls} style={{ marginBottom: 0 }}>Long Description</label>
+                        <div className="flex rounded-lg overflow-hidden border border-white/[0.08]">
+                          {(["plain", "markdown", "html"] as const).map((type) => (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => setCurrentProduct({ ...currentProduct, descriptionType: type })}
+                              className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] transition-all ${(currentProduct.descriptionType ?? "plain") === type ? "bg-white text-black" : "bg-white/[0.03] text-white/30 hover:text-white/60"}`}
+                            >
+                              {type}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea
+                        rows={8}
+                        value={currentProduct.longDescription || currentProduct.description || ""}
+                        onChange={(e) => setCurrentProduct({ ...currentProduct, longDescription: e.target.value, description: e.target.value.slice(0, 300) })}
+                        className={inputCls + " resize-y font-mono text-[13px]"}
+                        placeholder={
+                          (currentProduct.descriptionType ?? "plain") === "markdown"
+                            ? "## Heading\n\nParagraph text with **bold** and *italic*.\n\n- List item one\n- List item two"
+                            : (currentProduct.descriptionType ?? "plain") === "html"
+                            ? "<h2>Heading</h2>\n<p>Paragraph with <strong>bold</strong> text.</p>"
+                            : "Write a plain-text description. Use emojis for visual section headers."
+                        }
+                      />
+                      <p className="mt-1.5 text-[10px] text-white/20">
+                        {(currentProduct.descriptionType ?? "plain") === "markdown" && "Supports standard Markdown: headings, bold, italic, lists, code blocks."}
+                        {(currentProduct.descriptionType ?? "plain") === "html" && "Paste raw HTML — rendered as-is on the product page."}
+                        {(currentProduct.descriptionType ?? "plain") === "plain" && "Rendered as paragraphs. Emoji at line start becomes a visual section header."}
+                      </p>
                     </div>
                     <div className="col-span-2">
                       <label className={labelCls}>Features (one per line)</label>

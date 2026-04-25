@@ -14,6 +14,7 @@ export interface Product {
     downloadUrl?: string; // New
     documentationUrl?: string; // New
     longDescription?: string;
+    descriptionType?: "plain" | "markdown" | "html";
     order?: number;
     purchases: number; // New for sorting
     createdAt: string; // New for sorting

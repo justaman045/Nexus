@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import {
     CaretLeft,
     X,
@@ -19,6 +20,79 @@ import { addDoc, collection, doc, updateDoc, increment } from "firebase/firestor
 import { db } from "@/lib/firebase";
 import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
 import { useCurrency } from "@/components/CurrencyProvider";
+
+function ProductDescription({ content, type }: { content: string; type: "plain" | "markdown" | "html" }) {
+    if (type === "html") {
+        return (
+            <div
+                className="prose prose-invert prose-sm max-w-none text-muted-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/80 [&_a]:text-accent"
+                dangerouslySetInnerHTML={{ __html: content }}
+            />
+        );
+    }
+
+    if (type === "markdown") {
+        return (
+            <ReactMarkdown
+                components={{
+                    h1: ({ children }) => <h1 className="text-[22px] font-bold text-foreground tracking-tight mt-8 mb-3 first:mt-0">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-[18px] font-bold text-foreground tracking-tight mt-6 mb-2 first:mt-0">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-[15px] font-bold text-foreground mt-5 mb-1.5">{children}</h3>,
+                    p: ({ children }) => <p className="text-[15px] text-muted-foreground leading-relaxed mb-4">{children}</p>,
+                    ul: ({ children }) => <ul className="space-y-2 mb-4 ml-1">{children}</ul>,
+                    ol: ({ children }) => <ol className="space-y-2 mb-4 ml-1 list-decimal list-inside">{children}</ol>,
+                    li: ({ children }) => <li className="text-[14px] text-muted-foreground leading-relaxed flex items-start gap-2"><span className="mt-1.5 w-1 h-1 rounded-full bg-muted-foreground/50 shrink-0" /><span>{children}</span></li>,
+                    strong: ({ children }) => <strong className="font-semibold text-foreground/80">{children}</strong>,
+                    em: ({ children }) => <em className="italic text-muted-foreground/80">{children}</em>,
+                    code: ({ children }) => <code className="px-1.5 py-0.5 rounded-md bg-secondary text-[13px] font-mono text-foreground/70">{children}</code>,
+                    pre: ({ children }) => <pre className="rounded-2xl bg-secondary border border-border p-5 overflow-x-auto mb-4 text-[13px] font-mono text-foreground/70">{children}</pre>,
+                    hr: () => <hr className="border-border my-6" />,
+                    blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-4 text-muted-foreground/70 italic my-4">{children}</blockquote>,
+                }}
+            >
+                {content}
+            </ReactMarkdown>
+        );
+    }
+
+    // plain — existing emoji-aware renderer
+    return (
+        <div className="space-y-6">
+            {content.split('\n\n').map((para, pIdx) => {
+                const isFeatureList = para.includes('✅') || para.includes('❌') || para.includes('💎');
+                if (isFeatureList) {
+                    return (
+                        <div key={pIdx} className="card-pro p-6 space-y-3">
+                            {para.split('\n').filter(l => l.trim()).map((line, lIdx) => (
+                                <div key={lIdx} className="flex items-start gap-3 text-[14px] text-muted-foreground leading-relaxed">
+                                    <span className="flex-shrink-0 text-foreground/60 mt-0.5">{line.trim().match(/^[^\w\s]/)?.[0] || '•'}</span>
+                                    <span>{line.replace(/^[^\w\s]/, '').trim()}</span>
+                                </div>
+                            ))}
+                        </div>
+                    );
+                }
+                return (
+                    <div key={pIdx} className="space-y-1">
+                        {para.split('\n').filter(l => l.trim()).map((line, lIdx) => {
+                            const hasEmojiHeader = /^[\uD800-\uDBFF][\uDC00-\uDFFF]|^[^\w\s]/.test(line.trim());
+                            if (hasEmojiHeader) {
+                                const [emoji, ...rest] = line.trim().split(' ');
+                                return (
+                                    <h4 key={lIdx} className="text-[15px] font-bold text-foreground flex items-center gap-2 pt-4 first:pt-0">
+                                        <span className="opacity-50">{emoji}</span>
+                                        {rest.join(' ')}
+                                    </h4>
+                                );
+                            }
+                            return <p key={lIdx} className="text-[15px] text-muted-foreground leading-relaxed">{line}</p>;
+                        })}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
 function loadRazorpayScript(): Promise<boolean> {
     return new Promise((resolve) => {
@@ -196,39 +270,11 @@ export default function ProductDetailsPage() {
                         </div>
 
                         {(product.longDescription || product.description) && (
-                            <div className="mt-10 space-y-6">
-                                {(product.longDescription || product.description).split('\n\n').map((para, pIdx) => {
-                                    const isFeatureList = para.includes('✅') || para.includes('❌') || para.includes('💎');
-                                    if (isFeatureList) {
-                                        return (
-                                            <div key={pIdx} className="card-pro p-6 space-y-3">
-                                                {para.split('\n').filter(l => l.trim()).map((line, lIdx) => (
-                                                    <div key={lIdx} className="flex items-start gap-3 text-[14px] text-muted-foreground leading-relaxed">
-                                                        <span className="flex-shrink-0 text-foreground/60 mt-0.5">{line.trim().match(/^[^\w\s]/)?.[0] || '•'}</span>
-                                                        <span>{line.replace(/^[^\w\s]/, '').trim()}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    }
-                                    return (
-                                        <div key={pIdx} className="space-y-1">
-                                            {para.split('\n').filter(l => l.trim()).map((line, lIdx) => {
-                                                const hasEmojiHeader = /^[\uD800-\uDBFF][\uDC00-\uDFFF]|^[^\w\s]/.test(line.trim());
-                                                if (hasEmojiHeader) {
-                                                    const [emoji, ...rest] = line.trim().split(' ');
-                                                    return (
-                                                        <h4 key={lIdx} className="text-[15px] font-bold text-foreground flex items-center gap-2 pt-4 first:pt-0">
-                                                            <span className="opacity-50">{emoji}</span>
-                                                            {rest.join(' ')}
-                                                        </h4>
-                                                    );
-                                                }
-                                                return <p key={lIdx} className="text-[15px] text-muted-foreground leading-relaxed">{line}</p>;
-                                            })}
-                                        </div>
-                                    );
-                                })}
+                            <div className="mt-10">
+                                <ProductDescription
+                                    content={product.longDescription || product.description}
+                                    type={product.descriptionType ?? "plain"}
+                                />
                             </div>
                         )}
                     </motion.div>
