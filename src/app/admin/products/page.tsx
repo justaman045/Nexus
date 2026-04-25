@@ -13,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 import { Product, getProducts, deleteProduct, addProduct, updateProduct } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
+import { useCurrency } from "@/components/CurrencyProvider";
 
 const inputCls =
   "w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-white/20 focus:bg-white/[0.05] transition-all";
@@ -20,6 +21,7 @@ const inputCls =
 const labelCls = "block text-[10px] font-bold text-white/30 uppercase tracking-[0.15em] mb-2";
 
 export default function AdminProducts() {
+  const { format: formatCurrency } = useCurrency();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -161,7 +163,7 @@ export default function AdminProducts() {
                     </span>
                   </td>
                   <td className="px-8 py-5">
-                    <span className="text-white text-[14px] font-bold">${product.price}</span>
+                    <span className="text-white text-[14px] font-bold">{formatCurrency(product.price)}</span>
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-2">

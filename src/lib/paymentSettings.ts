@@ -23,7 +23,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
       return cached;
     }
   } catch {}
-  return { gateway: "razorpay", updatedAt: new Date().toISOString() };
+  return { gateway: "razorpay", multiCurrencyEnabled: true, updatedAt: new Date().toISOString() };
 }
 
 export async function setPaymentGateway(gateway: PaymentGateway): Promise<void> {

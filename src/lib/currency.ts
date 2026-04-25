@@ -77,13 +77,12 @@ interface RateCache {
 }
 
 interface GeoCache {
+  ip: string;
   countryCode: string;
   currencyCode: string;
-  timestamp: number;
 }
 
-const RATE_TTL = 60 * 60 * 1000;   // 1 hour
-const GEO_TTL  = 24 * 60 * 60 * 1000; // 24 hours
+const RATE_TTL = 60 * 60 * 1000; // 1 hour
 
 function getRateCache(): RateCache | null {
   try {
@@ -103,32 +102,37 @@ function getGeoCache(): GeoCache | null {
   try {
     const raw = sessionStorage.getItem("nx_geo");
     if (!raw) return null;
-    const cached: GeoCache = JSON.parse(raw);
-    if (Date.now() - cached.timestamp > GEO_TTL) return null;
-    return cached;
+    return JSON.parse(raw) as GeoCache;
   } catch { return null; }
 }
 
-function setGeoCache(countryCode: string, currencyCode: string) {
-  try { sessionStorage.setItem("nx_geo", JSON.stringify({ countryCode, currencyCode, timestamp: Date.now() })); } catch {}
+function setGeoCache(ip: string, countryCode: string, currencyCode: string) {
+  try { sessionStorage.setItem("nx_geo", JSON.stringify({ ip, countryCode, currencyCode })); } catch {}
 }
 
-// Detect currency from IP geolocation, with timezone fallback
+// Detect currency from IP geolocation, with timezone fallback.
+// Stores the detected IP — if IP changes (e.g. VPN), re-fetches instead of using stale cache.
 export async function detectCurrency(): Promise<string> {
-  const geo = getGeoCache();
-  if (geo) return geo.currencyCode;
-
-  // Try IP geolocation
+  // Try IP geolocation — always fetch current IP to detect VPN changes
   try {
     const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) });
     const data = await res.json();
+    const ip: string = data.ip || "";
+    const geo = getGeoCache();
+    // Return cached currency if same IP (avoids unnecessary work mid-session)
+    if (geo && ip && geo.ip === ip) return geo.currencyCode;
+
     const countryCode: string = data.country_code || "US";
     const currencyCode: string = data.currency || COUNTRY_CURRENCY[countryCode] || "USD";
-    setGeoCache(countryCode, currencyCode);
-    return CURRENCIES[currencyCode] ? currencyCode : "USD";
+    const resolved = CURRENCIES[currencyCode] ? currencyCode : "USD";
+    setGeoCache(ip, countryCode, resolved);
+    return resolved;
   } catch {}
 
-  // Timezone fallback
+  // Timezone fallback (when ipapi.co is unreachable)
+  const cached = getGeoCache();
+  if (cached) return cached.currencyCode;
+
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz.includes("Kolkata") || tz.includes("Calcutta")) return "INR";
