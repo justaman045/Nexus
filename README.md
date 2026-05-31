@@ -38,8 +38,8 @@
 
 ```bash
 # Clone
-git clone https://github.com/justaman045/company.git
-cd company
+git clone https://github.com/justaman045/Nexus.git
+cd Nexus
 
 # Install
 npm install
