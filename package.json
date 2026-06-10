@@ -14,7 +14,7 @@
     "firebase": "^12.9.0",
     "framer-motion": "^12.34.1",
     "lucide-react": "^0.574.0",
-    "next": "16.1.6",
+    "next": "16.2.9",
     "next-themes": "^0.4.6",
     "razorpay": "^2.9.6",
     "react": "19.2.3",
@@ -24,6 +24,11 @@
     "shortid": "^2.2.17",
     "stripe": "^22.1.0"
   },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.10"
+    }
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -31,7 +36,8 @@
     "@types/react-dom": "^19",
     "@types/shortid": "^2.2.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "16.2.9",
+    "postcss": "^8.5.15",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

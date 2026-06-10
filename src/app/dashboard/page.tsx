@@ -459,7 +459,7 @@ export default function CustomerDashboard() {
               <div className="space-y-3">
                 <h2 className="text-4xl font-bold tracking-tighter text-foreground leading-none">{siteSettings.dashboard.emptyHeading}</h2>
                 <p className="text-muted-foreground max-w-md mx-auto font-medium leading-relaxed text-lg">
-                  {siteSettings.dashboard.emptyDescription.replace("{email}", user.email)}
+                  {siteSettings.dashboard.emptyDescription.replace("{email}", user.email ?? "")}
                 </p>
               </div>
               <Link href="/products" className="btn-apple btn-apple-primary inline-flex px-12 py-5 text-[14px]">
