@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MagnifyingGlass, CircleNotch, ShoppingBag } from "@phosphor-icons/react";
+import { MagnifyingGlass, ShoppingBag, Package } from "@phosphor-icons/react";
 import { getOrders, Order } from "@/lib/orders";
+import { Glass, tableHeaderCls, LoadingSkeleton, StatusBadge } from "../_components/shared";
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -45,47 +46,51 @@ export default function AdminOrders() {
           <h1 className="text-[28px] font-bold text-white tracking-tight">Orders</h1>
           <p className="text-white/30 text-[14px] mt-1">Customer purchases and transactions</p>
         </div>
-        <div className="flex items-center gap-2 bg-blue-500/[0.08] text-blue-400/80 border border-blue-500/[0.12] px-4 py-2.5 rounded-xl">
-          <ShoppingBag size={16} weight="fill" />
-          <span className="text-[13px] font-bold">{orders.length} orders</span>
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl"
+          style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
+          <ShoppingBag size={16} weight="fill" className="text-indigo-400/80" />
+          <span className="text-[13px] font-bold text-indigo-400/80">{orders.length} orders</span>
         </div>
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative max-w-sm">
         <MagnifyingGlass size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/25" />
         <input
           type="text"
           placeholder="Search by product, payment ID, or email..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full max-w-sm bg-white/[0.02] border border-white/[0.05] rounded-2xl pl-11 pr-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-white/15 transition-all"
+          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-2xl pl-11 pr-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-indigo-400/40 focus:ring-2 focus:ring-indigo-500/20 transition-all"
         />
       </div>
 
       {/* Table */}
-      <div className="rounded-[28px] overflow-hidden" style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.09)" }}>
+      <Glass className="rounded-[28px] overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-white/[0.02] border-b border-white/[0.04]">
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Order / Date</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Product</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Customer</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Amount</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em] text-right">Status</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Order / Date</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Product</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Customer</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Amount</th>
+              <th className={`px-8 py-5 ${tableHeaderCls} text-right`}>Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.03]">
             {isLoading ? (
-              <tr>
-                <td colSpan={5} className="py-16 text-center">
-                  <CircleNotch size={24} className="animate-spin text-white/20 mx-auto" />
-                </td>
-              </tr>
+              <LoadingSkeleton cols={5} rows={6} />
             ) : filteredOrders.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-16 text-center text-white/25 text-[13px]">
-                  {searchTerm ? "No orders match your search" : "No orders yet"}
+                <td colSpan={5} className="py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <ShoppingBag size={22} className="text-white/20" />
+                    </div>
+                    <p className="text-white/25 text-[13px]">
+                      {searchTerm ? "No orders match your search" : "No orders yet"}
+                    </p>
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -99,11 +104,25 @@ export default function AdminOrders() {
                       <p className="text-white/30 text-[11px]">{time}</p>
                     </td>
                     <td className="px-8 py-5">
-                      <p className="text-white text-[14px] font-medium">{order.productName}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0">
+                          <Package size={14} className="text-white/30" />
+                        </div>
+                        <p className="text-white text-[14px] font-medium">{order.productName}</p>
+                      </div>
                     </td>
                     <td className="px-8 py-5">
-                      <p className="text-white text-[13px] font-medium">{order.customerInfo?.name || "—"}</p>
-                      <p className="text-white/30 text-[11px] font-mono mt-0.5">{order.customerInfo?.email || "—"}</p>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-indigo-500/[0.12] flex items-center justify-center shrink-0">
+                          <span className="text-[11px] font-bold text-indigo-400/70">
+                            {(order.customerInfo?.name || order.customerInfo?.email || "?")[0].toUpperCase()}
+                          </span>
+                        </div>
+                        <div>
+                          <p className="text-white text-[13px] font-medium leading-tight">{order.customerInfo?.name || "—"}</p>
+                          <p className="text-white/30 text-[11px] font-mono leading-tight mt-0.5">{order.customerInfo?.email || "—"}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-8 py-5">
                       <p className="text-white text-[14px] font-bold">
@@ -111,17 +130,7 @@ export default function AdminOrders() {
                       </p>
                     </td>
                     <td className="px-8 py-5 text-right">
-                      <span
-                        className={`text-[11px] font-bold px-3 py-1.5 rounded-full border ${
-                          order.status === "paid"
-                            ? "bg-emerald-500/[0.08] text-emerald-400/70 border-emerald-500/[0.1]"
-                            : order.status === "pending"
-                            ? "bg-amber-500/[0.08] text-amber-400/70 border-amber-500/[0.1]"
-                            : "bg-red-500/[0.08] text-red-400/70 border-red-500/[0.1]"
-                        }`}
-                      >
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                      </span>
+                      <StatusBadge status={order.status} glow />
                     </td>
                   </tr>
                 );
@@ -129,7 +138,7 @@ export default function AdminOrders() {
             )}
           </tbody>
         </table>
-      </div>
+      </Glass>
     </div>
   );
 }

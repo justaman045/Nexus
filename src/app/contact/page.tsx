@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { EnvelopeSimple, MapPin, Phone, PaperPlaneTilt, CircleNotch } from "@phosphor-icons/react";
 import { getHomepageContent, defaultContent, HomepageContent } from "@/lib/cms";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
 
 export default function ContactPage() {
+    const siteSettings = useSiteSettings();
     const [content, setContent] = useState<HomepageContent>(defaultContent);
     const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -44,12 +46,12 @@ export default function ContactPage() {
                     transition={{ duration: 0.8, ease: EASE }}
                     className="max-w-[600px] mx-auto space-y-5"
                 >
-                    <p className="text-label">Get in touch</p>
+                    <p className="text-label">{siteSettings.contactPage.heading}</p>
                     <h1 className="text-[clamp(40px,6vw,72px)] font-bold tracking-tight leading-[1.05] gradient-text">
-                        Let&apos;s Connect.
+                        {siteSettings.contactPage.subheading}
                     </h1>
                     <p className="text-[16px] text-muted-foreground leading-relaxed max-w-[420px] mx-auto">
-                        Have a question or need support? We respond to every message within 24 hours.
+                        {siteSettings.contactPage.description}
                     </p>
                 </motion.div>
             </section>
@@ -66,9 +68,9 @@ export default function ContactPage() {
                         className="space-y-10"
                     >
                         <div className="space-y-2">
-                            <h2 className="text-[24px] font-bold tracking-tight text-foreground">Contact details</h2>
+                            <h2 className="text-[24px] font-bold tracking-tight text-foreground">{siteSettings.contactPage.detailsHeading}</h2>
                             <p className="text-[15px] text-muted-foreground leading-relaxed">
-                                Our team is distributed globally and available across timezones.
+                                {siteSettings.contactPage.detailsSubheading}
                             </p>
                         </div>
 
@@ -110,7 +112,7 @@ export default function ContactPage() {
                         <div className="card-pro p-5 flex items-center gap-3">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                             <p className="text-[13px] text-muted-foreground">
-                                <span className="font-semibold text-foreground">Typically replies within 2 hours</span> during business hours
+                                {siteSettings.contactPage.responseTime}
                             </p>
                         </div>
                     </motion.div>
@@ -127,21 +129,21 @@ export default function ContactPage() {
                                     <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
                                         <PaperPlaneTilt size={24} weight="fill" className="text-emerald-500" />
                                     </div>
-                                    <h3 className="text-[20px] font-bold text-foreground">Message sent!</h3>
-                                    <p className="text-[14px] text-muted-foreground">We'll get back to you within 24 hours.</p>
+                                    <h3 className="text-[20px] font-bold text-foreground">{siteSettings.contactPage.formSuccessHeading}</h3>
+                                    <p className="text-[14px] text-muted-foreground">{siteSettings.contactPage.formSuccessMessage}</p>
                                     <button
                                         onClick={() => setSent(false)}
                                         className="text-[13px] font-semibold text-accent hover:underline mt-2"
                                     >
-                                        Send another
+                                        {siteSettings.contactPage.formSendAnother}
                                     </button>
                                 </div>
                             ) : (
                                 <form onSubmit={handleSubmit} className="space-y-5">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {[
-                                            { label: "Name", name: "name", type: "text", placeholder: "Your name" },
-                                            { label: "Email", name: "email", type: "email", placeholder: "your@email.com" },
+                                            { label: siteSettings.contactPage.formLabels.name, name: "name", type: "text", placeholder: "Your name" },
+                                            { label: siteSettings.contactPage.formLabels.email, name: "email", type: "email", placeholder: "your@email.com" },
                                         ].map(f => (
                                             <div key={f.name} className="space-y-1.5">
                                                 <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{f.label}</label>
@@ -159,7 +161,7 @@ export default function ContactPage() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Subject</label>
+                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.subject}</label>
                                         <input
                                             required
                                             type="text"
@@ -172,7 +174,7 @@ export default function ContactPage() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Message</label>
+                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.message}</label>
                                         <textarea
                                             required
                                             name="message"

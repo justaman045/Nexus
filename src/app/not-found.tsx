@@ -3,8 +3,10 @@
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { ArrowLeft, MagnifyingGlass } from "@phosphor-icons/react";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function NotFound() {
+  const siteSettings = useSiteSettings();
   return (
     <div className="min-h-[100dvh] bg-background flex items-center justify-center px-6">
       <motion.div
@@ -18,19 +20,19 @@ export default function NotFound() {
         </div>
 
         <div className="space-y-4">
-          <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-muted-foreground/50">Error 404</p>
-          <h1 className="text-display gradient-text leading-none">Page not found.</h1>
+          <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-muted-foreground/50">{siteSettings.notFound.code}</p>
+          <h1 className="text-display gradient-text leading-none">{siteSettings.notFound.heading}</h1>
           <p className="text-body-large text-muted-foreground max-w-sm mx-auto">
-            The page you're looking for doesn't exist or has been moved.
+            {siteSettings.notFound.description}
           </p>
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link href="/" className="btn-pro btn-pro-primary px-8 py-3 flex items-center gap-2">
-            <ArrowLeft size={15} weight="bold" /> Back to Home
+            <ArrowLeft size={15} weight="bold" /> {siteSettings.notFound.backButton}
           </Link>
           <Link href="/products" className="btn-pro btn-pro-secondary px-8 py-3">
-            Browse Products
+            {siteSettings.notFound.browseButton}
           </Link>
         </div>
       </motion.div>

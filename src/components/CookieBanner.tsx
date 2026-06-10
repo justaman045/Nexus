@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Cookie, X } from "@phosphor-icons/react";
 import Link from "next/link";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function CookieBanner() {
+  const siteSettings = useSiteSettings();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -34,16 +36,16 @@ export default function CookieBanner() {
               <Cookie size={18} className="text-muted-foreground" />
             </div>
             <p className="text-[13px] text-muted-foreground flex-1 leading-relaxed">
-              We use cookies to improve your experience.{" "}
+              {siteSettings.cookieBanner.message}{" "}
               <Link href="/cookies" className="text-foreground font-semibold hover:underline underline-offset-2">
-                Learn more
+                {siteSettings.cookieBanner.learnMoreLabel}
               </Link>
             </p>
             <button
               onClick={dismiss}
               className="btn-pro btn-pro-primary text-[12px] py-2 px-4 shrink-0"
             >
-              Accept
+              {siteSettings.cookieBanner.acceptLabel}
             </button>
             <button
               onClick={dismiss}

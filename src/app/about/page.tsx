@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Target, Lightning, Lock, ArrowRight, Users, Code, Globe, ShieldCheck } from "@phosphor-icons/react";
 import { getHomepageContent, HomepageContent, defaultContent } from "@/lib/cms";
 import Link from "next/link";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
 
@@ -16,6 +17,7 @@ const inView = (delay = 0) => ({
 });
 
 export default function AboutPage() {
+  const siteSettings = useSiteSettings();
   const [content, setContent] = useState<HomepageContent>(defaultContent);
 
   useEffect(() => {
@@ -56,9 +58,7 @@ export default function AboutPage() {
               transition={{ delay: 0.08, duration: 0.9, ease: EASE }}
               className="text-[clamp(44px,6vw,80px)] font-bold tracking-[-0.04em] leading-[1.0]"
             >
-              <span className="gradient-text">We build</span><br />
-              <span className="text-foreground/90">software</span><br />
-              <span className="gradient-text">differently.</span>
+              <span className="gradient-text">{siteSettings.aboutPage.heroHeading}</span>
             </motion.h1>
 
             <motion.p
@@ -67,7 +67,7 @@ export default function AboutPage() {
               transition={{ delay: 0.16, duration: 0.8, ease: EASE }}
               className="text-[16px] text-muted-foreground leading-relaxed max-w-[420px]"
             >
-              {content.about?.description || "A collective of engineers and designers committed to building tools for the modern creator — designed with precision, engineered with purpose."}
+              {siteSettings.aboutPage.heroSubheading || content.about?.description || ""}
             </motion.p>
 
             <motion.div
@@ -94,25 +94,29 @@ export default function AboutPage() {
           >
             {/* Stat cards */}
             {[
-              { value: "2023", label: "Founded", icon: Globe, color: "from-blue-500/15 to-blue-600/5", border: "border-blue-500/20", text: "text-blue-400" },
-              { value: "10+", label: "Products", icon: Code, color: "from-violet-500/15 to-violet-600/5", border: "border-violet-500/20", text: "text-violet-400" },
-              { value: "50+", label: "Countries", icon: Target, color: "from-pink-500/15 to-pink-600/5", border: "border-pink-500/20", text: "text-pink-400" },
-              { value: "99.9%", label: "Uptime", icon: ShieldCheck, color: "from-emerald-500/15 to-emerald-600/5", border: "border-emerald-500/20", text: "text-emerald-400" },
-            ].map((item, i) => (
-              <motion.div
-                key={item.label}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 + i * 0.08, duration: 0.7, ease: EASE }}
-                className={`card-pro p-6 bg-gradient-to-br ${item.color} border ${item.border} space-y-3`}
-              >
-                <item.icon size={20} weight="fill" className={item.text} />
-                <div>
-                  <div className={`text-[28px] font-bold font-mono tracking-tight ${item.text}`}>{item.value}</div>
-                  <div className="text-[12px] font-semibold text-muted-foreground uppercase tracking-[0.1em] mt-0.5">{item.label}</div>
-                </div>
-              </motion.div>
-            ))}
+              { icon: Globe, color: "from-blue-500/15 to-blue-600/5", border: "border-blue-500/20", text: "text-blue-400" },
+              { icon: Code, color: "from-violet-500/15 to-violet-600/5", border: "border-violet-500/20", text: "text-violet-400" },
+              { icon: Target, color: "from-pink-500/15 to-pink-600/5", border: "border-pink-500/20", text: "text-pink-400" },
+              { icon: ShieldCheck, color: "from-emerald-500/15 to-emerald-600/5", border: "border-emerald-500/20", text: "text-emerald-400" },
+            ].map((item, i) => {
+              const stat = siteSettings.aboutPage.statCards[i];
+              if (!stat) return null;
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 + i * 0.08, duration: 0.7, ease: EASE }}
+                  className={`card-pro p-6 bg-gradient-to-br ${item.color} border ${item.border} space-y-3`}
+                >
+                  <item.icon size={20} weight="fill" className={item.text} />
+                  <div>
+                    <div className={`text-[28px] font-bold font-mono tracking-tight ${item.text}`}>{stat.value}</div>
+                    <div className="text-[12px] font-semibold text-muted-foreground uppercase tracking-[0.1em] mt-0.5">{stat.label}</div>
+                  </div>
+                </motion.div>
+              );
+            })}
           </motion.div>
         </div>
       </section>
@@ -139,9 +143,9 @@ export default function AboutPage() {
           <motion.div {...inView()}>
             <p className="text-label mb-6">Our belief</p>
             <blockquote className="text-[clamp(20px,2.5vw,26px)] font-semibold text-foreground/80 leading-[1.55] tracking-tight">
-              &ldquo;High-performance software doesn&apos;t have to be visually abrasive. Speed and beauty are the same thing — and we exist to prove it.&rdquo;
+              {siteSettings.aboutPage.manifestoQuote}
             </blockquote>
-            <p className="mt-6 text-[12px] font-bold uppercase tracking-[0.18em] text-muted-foreground/40">— Nexus Core Team</p>
+            <p className="mt-6 text-[12px] font-bold uppercase tracking-[0.18em] text-muted-foreground/40">— {siteSettings.aboutPage.manifestoAttribution}</p>
           </motion.div>
         </div>
       </section>
@@ -150,29 +154,33 @@ export default function AboutPage() {
       <section className="pb-24 px-6 sm:px-8 lg:px-12">
         <div className="container-pro">
           <motion.div {...inView()} className="mb-12">
-            <p className="text-label mb-3">What drives us</p>
-            <h2 className="text-[clamp(32px,4vw,52px)] font-bold tracking-tight gradient-text">Core principles.</h2>
+            <p className="text-label mb-3">{siteSettings.aboutPage.principlesSectionHeading}</p>
+            <h2 className="text-[clamp(32px,4vw,52px)] font-bold tracking-tight gradient-text">{siteSettings.aboutPage.principlesSectionSubheading}</h2>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {[
-              { icon: Target, title: "Precision", desc: "Every pixel, every API, every interaction is deliberate. We build tools that do exactly what they say — nothing more.", color: "from-blue-500/15", border: "border-blue-500/20", icon_c: "text-blue-400", bg: "bg-blue-500/10" },
-              { icon: Lightning, title: "Speed", desc: "Eliminating latency between thought and execution — at the code level, the UI level, and the business level.", color: "from-violet-500/15", border: "border-violet-500/20", icon_c: "text-violet-400", bg: "bg-violet-500/10" },
-              { icon: Lock, title: "Ownership", desc: "We own every line of code we ship. No outsourced quality, no third-party dependencies we don't understand.", color: "from-pink-500/15", border: "border-pink-500/20", icon_c: "text-pink-400", bg: "bg-pink-500/10" },
-            ].map((item, i) => (
-              <motion.div key={item.title} {...inView(i * 0.1)} className={`card-pro p-8 group relative overflow-hidden`}>
-                <div className={`absolute inset-0 bg-gradient-to-br ${item.color} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
-                <div className="relative z-10 space-y-5">
-                  <div className={`w-11 h-11 rounded-xl ${item.bg} border ${item.border} flex items-center justify-center`}>
-                    <item.icon size={20} weight="fill" className={item.icon_c} />
+              { icon: Target, color: "from-blue-500/15", border: "border-blue-500/20", icon_c: "text-blue-400", bg: "bg-blue-500/10" },
+              { icon: Lightning, color: "from-violet-500/15", border: "border-violet-500/20", icon_c: "text-violet-400", bg: "bg-violet-500/10" },
+              { icon: Lock, color: "from-pink-500/15", border: "border-pink-500/20", icon_c: "text-pink-400", bg: "bg-pink-500/10" },
+            ].map((item, i) => {
+              const principle = siteSettings.aboutPage.principles[i];
+              if (!principle) return null;
+              return (
+                <motion.div key={i} {...inView(i * 0.1)} className={`card-pro p-8 group relative overflow-hidden`}>
+                  <div className={`absolute inset-0 bg-gradient-to-br ${item.color} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700`} />
+                  <div className="relative z-10 space-y-5">
+                    <div className={`w-11 h-11 rounded-xl ${item.bg} border ${item.border} flex items-center justify-center`}>
+                      <item.icon size={20} weight="fill" className={item.icon_c} />
+                    </div>
+                    <div>
+                      <h3 className="text-[18px] font-bold tracking-tight mb-2">{principle.title}</h3>
+                      <p className="text-[14px] text-muted-foreground leading-relaxed">{principle.description}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-[18px] font-bold tracking-tight mb-2">{item.title}</h3>
-                    <p className="text-[14px] text-muted-foreground leading-relaxed">{item.desc}</p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -192,22 +200,24 @@ export default function AboutPage() {
           <div className="relative z-10 p-10 md:p-16 lg:p-20 grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
             <div className="space-y-7">
               <div>
-                <p className="text-[10px] font-bold tracking-[0.22em] uppercase mb-4" style={{ color: "rgba(255,255,255,0.28)" }}>The Collective</p>
+                <p className="text-[10px] font-bold tracking-[0.22em] uppercase mb-4" style={{ color: "rgba(255,255,255,0.28)" }}>{siteSettings.aboutPage.collectiveSectionLabel}</p>
                 <h2 className="text-[clamp(30px,3.5vw,48px)] font-bold leading-[1.1] tracking-tight" style={{ color: "rgba(255,255,255,0.95)" }}>
-                  Built different,<br />by design.
+                  {siteSettings.aboutPage.collectiveHeading}
                 </h2>
               </div>
               <div className="space-y-4 text-[15px] leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>
-                <p>Nexus was founded on a simple realization: high-performance software doesn't have to be visually abrasive.</p>
-                <p>We operate as a high-trust collective, prioritizing deep work and architectural integrity over generic growth. Every tool we ship is something we use daily.</p>
-                <p>We push the boundaries of what's possible on the web — crafting a digital suite that scales with your ambition.</p>
+                {siteSettings.aboutPage.collectiveBody.map((para, i) => (
+                  <p key={i}>{para}</p>
+                ))}
               </div>
               <div className="flex items-center gap-3 pt-2">
                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-[15px] font-bold"
-                  style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.8)" }}>N</div>
+                  style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.8)" }}>
+                  {siteSettings.brandName[0]}
+                </div>
                 <div>
-                  <p className="text-[13px] font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>Nexus Core Team</p>
-                  <p className="text-[10px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.22)" }}>Founded 2023</p>
+                  <p className="text-[13px] font-bold" style={{ color: "rgba(255,255,255,0.7)" }}>{siteSettings.aboutPage.teamLabel}</p>
+                  <p className="text-[10px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.22)" }}>{siteSettings.aboutPage.teamDate}</p>
                 </div>
               </div>
             </div>
@@ -230,15 +240,15 @@ export default function AboutPage() {
       {/* ── BOTTOM CTA ── */}
       <section className="pb-32 px-6 text-center">
         <motion.div {...inView()} className="space-y-5 max-w-[480px] mx-auto">
-          <h2 className="text-[clamp(28px,4vw,44px)] font-bold tracking-tight gradient-text">Ready to build?</h2>
+          <h2 className="text-[clamp(28px,4vw,44px)] font-bold tracking-tight gradient-text">{siteSettings.finalCta.subheading}</h2>
           <p className="text-[15px] text-muted-foreground leading-relaxed">
-            Browse our full suite and find the tool that moves your work forward.
+            {siteSettings.finalCta.description}
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-3">
             <Link href="/products" className="btn-apple btn-apple-primary px-7 py-3.5 text-[14px] flex items-center gap-2">
-              Explore Products <ArrowRight size={14} weight="bold" />
+              {siteSettings.finalCta.primaryButton} <ArrowRight size={14} weight="bold" />
             </Link>
-            <Link href="/contact" className="btn-apple btn-apple-secondary px-7 py-3.5 text-[14px]">Contact Us</Link>
+            <Link href="/contact" className="btn-apple btn-apple-secondary px-7 py-3.5 text-[14px]">{siteSettings.finalCta.secondaryButton}</Link>
           </div>
         </motion.div>
       </section>

@@ -6,16 +6,10 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Rocket, List, X } from "@phosphor-icons/react";
 import { ThemeToggle } from "./ThemeToggle";
-
-const navLinks = [
-  { label: "Products", href: "/products" },
-  { label: "Dashboard", href: "/dashboard" },
-  { label: "Track Order", href: "/orders" },
-  { label: "About", href: "/about" },
-  { label: "Contact", href: "/contact" },
-];
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function Navbar() {
+  const siteSettings = useSiteSettings();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
@@ -44,13 +38,13 @@ export default function Navbar() {
               <Rocket size={16} weight="fill" className="text-background" />
             </div>
             <span className="font-bold text-[17px] tracking-[-0.03em] text-foreground">
-              Nexus
+              {siteSettings.brandName}
             </span>
           </Link>
 
           {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
+            {siteSettings.navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -68,8 +62,8 @@ export default function Navbar() {
           {/* Right cluster */}
           <div className="hidden md:flex items-center gap-3">
             <ThemeToggle />
-            <Link href="/products" className="btn-pro btn-pro-accent text-[13px] py-2.5 px-5">
-              Shop Now
+            <Link href={siteSettings.navCta.href} className="btn-pro btn-pro-accent text-[13px] py-2.5 px-5">
+              {siteSettings.navCta.label}
             </Link>
           </div>
 
@@ -98,7 +92,7 @@ export default function Navbar() {
             className="fixed inset-0 z-40 bg-background/95 backdrop-blur-xl flex flex-col md:hidden"
           >
             <div className="flex flex-col gap-2 px-8 pt-28 pb-12">
-              {navLinks.map((link, i) => (
+              {siteSettings.navLinks.map((link, i) => (
                 <motion.div
                   key={link.href}
                   initial={{ opacity: 0, x: -16 }}
@@ -123,8 +117,8 @@ export default function Navbar() {
                 transition={{ delay: 0.25, duration: 0.4 }}
                 className="mt-8"
               >
-                <Link href="/products" className="btn-apple btn-apple-primary w-full justify-center">
-                  Shop Now
+                <Link href={siteSettings.navCta.href} className="btn-apple btn-apple-primary w-full justify-center">
+                  {siteSettings.navCta.label}
                 </Link>
               </motion.div>
             </div>

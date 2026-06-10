@@ -5,6 +5,7 @@ import FooterWrapper from "@/components/FooterWrapper";
 import ContentWrapper from "@/components/ContentWrapper";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { CurrencyProvider } from "@/components/CurrencyProvider";
+import { SiteSettingsProvider } from "@/contexts/SiteSettingsContext";
 import CookieBanner from "@/components/CookieBanner";
 
 export const metadata: Metadata = {
@@ -47,12 +48,14 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <CurrencyProvider>
-            <NavbarWrapper />
-            <ContentWrapper>
-              {children}
-            </ContentWrapper>
-            <FooterWrapper />
-            <CookieBanner />
+            <SiteSettingsProvider>
+              <NavbarWrapper />
+              <ContentWrapper>
+                {children}
+              </ContentWrapper>
+              <FooterWrapper />
+              <CookieBanner />
+            </SiteSettingsProvider>
           </CurrencyProvider>
         </ThemeProvider>
       </body>

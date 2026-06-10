@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import {
     CaretLeft,
     X,
@@ -13,6 +15,8 @@ import {
     CircleNotch,
     ArrowSquareOut,
     Check,
+    Copy,
+    Terminal,
 } from "@phosphor-icons/react";
 import { getProductById, Product } from "@/lib/products";
 import { generateLicense } from "@/lib/licenses";
@@ -20,74 +24,198 @@ import { addDoc, collection, doc, updateDoc, increment } from "firebase/firestor
 import { db } from "@/lib/firebase";
 import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+
+function CodeBlock({ className, children, ...props }: { className?: string; children?: React.ReactNode }) {
+    const [copied, setCopied] = useState(false);
+    const codeText = String(children || "").replace(/\n$/, "");
+    const lang = className?.replace("language-", "") || "";
+
+    const handleCopy = useCallback(() => {
+        navigator.clipboard.writeText(codeText);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    }, [codeText]);
+
+    return (
+        <div className="group relative rounded-2xl border border-border bg-secondary/80 mb-4 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-1.5 border-b border-border bg-foreground/[0.02]">
+                <div className="flex items-center gap-1.5">
+                    <Terminal size={12} className="text-muted-foreground/40" />
+                    <span className="text-[10px] font-mono font-medium text-muted-foreground/50 uppercase tracking-wider">
+                        {lang || "code"}
+                    </span>
+                </div>
+                <button
+                    onClick={handleCopy}
+                    className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground/50 hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                >
+                    {copied ? (
+                        <><Check size={11} className="text-emerald-500" /> Copied</>
+                    ) : (
+                        <><Copy size={11} /> Copy</>
+                    )}
+                </button>
+            </div>
+            <pre className="p-4 overflow-x-auto text-[13px] font-mono text-foreground/80 leading-relaxed">
+                <code className={className} {...props}>
+                    {children}
+                </code>
+            </pre>
+        </div>
+    );
+}
+
+const markdownComponents: Components = {
+    h1: ({ children }) => (
+        <h1 className="text-[22px] font-bold text-foreground tracking-tight mt-10 mb-3 first:mt-0">{children}</h1>
+    ),
+    h2: ({ children }) => (
+        <h2 className="text-[18px] font-bold text-foreground tracking-tight mt-8 mb-2 first:mt-0 border-b border-border/40 pb-1.5">{children}</h2>
+    ),
+    h3: ({ children }) => (
+        <h3 className="text-[15px] font-bold text-foreground mt-6 mb-1.5">{children}</h3>
+    ),
+    h4: ({ children }) => (
+        <h4 className="text-[14px] font-semibold text-foreground mt-5 mb-1">{children}</h4>
+    ),
+    p: ({ children }) => (
+        <p className="text-[15px] text-muted-foreground leading-relaxed mb-4">{children}</p>
+    ),
+    ul: ({ children }) => (
+        <ul className="space-y-1.5 mb-4">{children}</ul>
+    ),
+    ol: ({ children }) => (
+        <ol className="space-y-1.5 mb-4 list-decimal list-inside">{children}</ol>
+    ),
+    li: ({ children, className }) => {
+        const isTaskItem = className?.includes("task-list-item");
+        if (isTaskItem) {
+            return <li className="text-[14px] text-muted-foreground leading-relaxed mb-1 flex items-start gap-2">{children}</li>;
+        }
+        return (
+            <li className="text-[14px] text-muted-foreground leading-relaxed flex items-start gap-2.5">
+                <span className="mt-1.5 w-1 h-1 rounded-full bg-muted-foreground/40 shrink-0" />
+                <span>{children}</span>
+            </li>
+        );
+    },
+    strong: ({ children }) => (
+        <strong className="font-semibold text-foreground/80">{children}</strong>
+    ),
+    em: ({ children }) => (
+        <em className="italic text-muted-foreground/80">{children}</em>
+    ),
+    code: ({ className, children, ...props }) => {
+        const isInline = !className;
+        if (isInline) {
+            return (
+                <code className="px-1.5 py-0.5 rounded-md bg-foreground/[0.06] text-[13px] font-mono text-foreground/80 border border-border/50">
+                    {children}
+                </code>
+            );
+        }
+        return null;
+    },
+    pre: ({ children }) => {
+        const codeEl = children as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
+        return <CodeBlock className={codeEl?.props?.className} children={codeEl?.props?.children} />;
+    },
+    hr: () => <hr className="border-border/60 my-8" />,
+    blockquote: ({ children }) => (
+        <blockquote className="border-l-[3px] border-accent/30 pl-5 text-muted-foreground/70 italic my-6 bg-accent/[0.03] py-3 pr-4 rounded-r-xl">
+            {children}
+        </blockquote>
+    ),
+    a: ({ href, children }) => (
+        <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline underline-offset-2 decoration-accent/30 hover:decoration-accent/80 transition-colors"
+        >
+            {children}
+        </a>
+    ),
+    img: ({ src, alt }) => (
+        <span className="block my-6">
+            <img
+                src={src}
+                alt={alt || ""}
+                className="max-w-full h-auto rounded-xl border border-border"
+                loading="lazy"
+            />
+            {alt && (
+                <span className="block text-center text-[12px] text-muted-foreground/50 mt-2 italic">{alt}</span>
+            )}
+        </span>
+    ),
+    table: ({ children }) => (
+        <div className="overflow-x-auto my-6 rounded-xl border border-border">
+            <table className="w-full text-left text-[14px]">{children}</table>
+        </div>
+    ),
+    thead: ({ children }) => (
+        <thead className="bg-foreground/[0.03] border-b border-border">{children}</thead>
+    ),
+    tbody: ({ children }) => (
+        <tbody>{children}</tbody>
+    ),
+    tr: ({ children }) => (
+        <tr className="border-b border-border/50 last:border-0">{children}</tr>
+    ),
+    th: ({ children }) => (
+        <th className="px-4 py-3 font-bold text-foreground/80 text-[12px] uppercase tracking-[0.06em]">{children}</th>
+    ),
+    td: ({ children }) => (
+        <td className="px-4 py-3 text-muted-foreground">{children}</td>
+    ),
+    input: ({ checked }) => (
+        <span className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 mt-0.5 ${
+            checked
+                ? "bg-accent border-accent text-white"
+                : "border-border bg-transparent"
+        }`}>
+            {checked && <Check size={10} weight="bold" />}
+        </span>
+    ),
+};
+
+function looksLikeMarkdown(text: string): boolean {
+    return /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|```|>\s|\|.+\||\[.+\]\(.+\))/.test(text)
+        || /\*\*.*?\*\*|`[^`]+`|(\s|^)[-*+]\s/.test(text)
+        || /^[\u{1F300}-\u{1FAFF}]|^[\u{2700}-\u{27BF}]|^★/u.test(text.trim());
+}
 
 function ProductDescription({ content, type }: { content: string; type: "plain" | "markdown" | "html" }) {
     if (type === "html") {
         return (
             <div
-                className="prose prose-invert prose-sm max-w-none text-muted-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/80 [&_a]:text-accent"
+                className="prose prose-sm max-w-none text-muted-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/80 [&_a]:text-accent"
                 dangerouslySetInnerHTML={{ __html: content }}
             />
         );
     }
 
-    if (type === "markdown") {
+    if (type === "markdown" || looksLikeMarkdown(content)) {
         return (
-            <ReactMarkdown
-                components={{
-                    h1: ({ children }) => <h1 className="text-[22px] font-bold text-foreground tracking-tight mt-8 mb-3 first:mt-0">{children}</h1>,
-                    h2: ({ children }) => <h2 className="text-[18px] font-bold text-foreground tracking-tight mt-6 mb-2 first:mt-0">{children}</h2>,
-                    h3: ({ children }) => <h3 className="text-[15px] font-bold text-foreground mt-5 mb-1.5">{children}</h3>,
-                    p: ({ children }) => <p className="text-[15px] text-muted-foreground leading-relaxed mb-4">{children}</p>,
-                    ul: ({ children }) => <ul className="space-y-2 mb-4 ml-1">{children}</ul>,
-                    ol: ({ children }) => <ol className="space-y-2 mb-4 ml-1 list-decimal list-inside">{children}</ol>,
-                    li: ({ children }) => <li className="text-[14px] text-muted-foreground leading-relaxed flex items-start gap-2"><span className="mt-1.5 w-1 h-1 rounded-full bg-muted-foreground/50 shrink-0" /><span>{children}</span></li>,
-                    strong: ({ children }) => <strong className="font-semibold text-foreground/80">{children}</strong>,
-                    em: ({ children }) => <em className="italic text-muted-foreground/80">{children}</em>,
-                    code: ({ children }) => <code className="px-1.5 py-0.5 rounded-md bg-secondary text-[13px] font-mono text-foreground/70">{children}</code>,
-                    pre: ({ children }) => <pre className="rounded-2xl bg-secondary border border-border p-5 overflow-x-auto mb-4 text-[13px] font-mono text-foreground/70">{children}</pre>,
-                    hr: () => <hr className="border-border my-6" />,
-                    blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-4 text-muted-foreground/70 italic my-4">{children}</blockquote>,
-                }}
-            >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {content}
             </ReactMarkdown>
         );
     }
 
-    // plain — existing emoji-aware renderer
     return (
-        <div className="space-y-6">
-            {content.split('\n\n').map((para, pIdx) => {
-                const isFeatureList = para.includes('✅') || para.includes('❌') || para.includes('💎');
-                if (isFeatureList) {
-                    return (
-                        <div key={pIdx} className="card-pro p-6 space-y-3">
-                            {para.split('\n').filter(l => l.trim()).map((line, lIdx) => (
-                                <div key={lIdx} className="flex items-start gap-3 text-[14px] text-muted-foreground leading-relaxed">
-                                    <span className="flex-shrink-0 text-foreground/60 mt-0.5">{line.trim().match(/^[^\w\s]/)?.[0] || '•'}</span>
-                                    <span>{line.replace(/^[^\w\s]/, '').trim()}</span>
-                                </div>
-                            ))}
-                        </div>
-                    );
+        <div className="space-y-4">
+            {content.split("\n").map((line, i) => {
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    return i > 0 ? <div key={i} className="h-3" /> : null;
                 }
                 return (
-                    <div key={pIdx} className="space-y-1">
-                        {para.split('\n').filter(l => l.trim()).map((line, lIdx) => {
-                            const hasEmojiHeader = /^[\uD800-\uDBFF][\uDC00-\uDFFF]|^[^\w\s]/.test(line.trim());
-                            if (hasEmojiHeader) {
-                                const [emoji, ...rest] = line.trim().split(' ');
-                                return (
-                                    <h4 key={lIdx} className="text-[15px] font-bold text-foreground flex items-center gap-2 pt-4 first:pt-0">
-                                        <span className="opacity-50">{emoji}</span>
-                                        {rest.join(' ')}
-                                    </h4>
-                                );
-                            }
-                            return <p key={lIdx} className="text-[15px] text-muted-foreground leading-relaxed">{line}</p>;
-                        })}
-                    </div>
+                    <p key={i} className="text-[15px] text-muted-foreground leading-relaxed">
+                        {trimmed}
+                    </p>
                 );
             })}
         </div>
@@ -113,6 +241,7 @@ export default function ProductDetailsPage() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [userDetails, setUserDetails] = useState({ name: "", email: "", contact: "" });
 
+    const siteSettings = useSiteSettings();
     const [gateway, setGateway] = useState<PaymentGateway>("razorpay");
     const { currency, rate: exchangeRate, format: formatCurrency, convert } = useCurrency();
 
@@ -146,7 +275,7 @@ export default function ProductDetailsPage() {
             key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
             amount: order.amount,
             currency: order.currency,
-            name: "Nexus SaaS",
+            name: siteSettings.productDetail.merchantName,
             description: `License for ${product!.name}`,
             order_id: order.id,
             handler: async function (response: any) {
@@ -204,7 +333,6 @@ export default function ProductDetailsPage() {
             alert(data.error || "Failed to initiate Stripe checkout.");
             return;
         }
-        // Save pending info to sessionStorage so orders page can save after redirect
         sessionStorage.setItem("stripe_pending", JSON.stringify({
             productId: product!.id,
             productName: product!.name,
@@ -255,7 +383,7 @@ export default function ProductDetailsPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-16 xl:gap-24 items-start">
 
-                    {/* ── LEFT: Image ── */}
+                    {/* ── LEFT: Image + Description ── */}
                     <motion.div
                         initial={{ opacity: 0, y: 16 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -269,12 +397,39 @@ export default function ProductDetailsPage() {
                             />
                         </div>
 
-                        {(product.longDescription || product.description) && (
+                        {product.longDescription && (
+                            <div className="mt-12">
+                                <p className="text-label mb-5">Overview</p>
+                                <div
+                                    className="rounded-2xl border border-border p-6 sm:p-8"
+                                    style={{
+                                        background: "hsla(var(--card) / 0.5)",
+                                        backdropFilter: "blur(20px) saturate(180%)",
+                                        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                                    }}
+                                >
+                                    <ProductDescription
+                                        content={product.longDescription}
+                                        type={product.descriptionType ?? "plain"}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        {!product.longDescription && product.description && (
                             <div className="mt-10">
-                                <ProductDescription
-                                    content={product.longDescription || product.description}
-                                    type={product.descriptionType ?? "plain"}
-                                />
+                                <div
+                                    className="rounded-2xl border border-border p-6 sm:p-8"
+                                    style={{
+                                        background: "hsla(var(--card) / 0.5)",
+                                        backdropFilter: "blur(20px) saturate(180%)",
+                                        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                                    }}
+                                >
+                                    <ProductDescription
+                                        content={product.description}
+                                        type={product.descriptionType ?? "plain"}
+                                    />
+                                </div>
                             </div>
                         )}
                     </motion.div>
@@ -301,9 +456,14 @@ export default function ProductDetailsPage() {
                             <h1 className="text-[32px] sm:text-[38px] font-bold tracking-tight leading-[1.1] text-foreground">
                                 {product.name}
                             </h1>
-                            <p className="mt-3 text-[15px] text-muted-foreground leading-relaxed">
-                                {product.description}
-                            </p>
+                            {product.longDescription && (
+                                <div className="mt-3 text-[14px] text-muted-foreground leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0 [&_h1]:text-[18px] [&_h2]:text-[16px] [&_h3]:text-[14px] [&_ul]:space-y-0.5 [&_code]:text-[12px]">
+                                    <ProductDescription
+                                        content={product.description}
+                                        type={product.descriptionType ?? "plain"}
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div className="py-4 border-y border-border flex items-center justify-between">
@@ -332,7 +492,7 @@ export default function ProductDetailsPage() {
                                 onClick={() => setShowPaymentModal(true)}
                                 className="w-full btn-apple btn-apple-primary py-4 text-[14px] font-semibold"
                             >
-                                Acquire License
+                                {siteSettings.productDetail.acquireLabel}
                             </button>
                             {product.demoUrl ? (
                                 <Link
@@ -341,11 +501,11 @@ export default function ProductDetailsPage() {
                                     rel="noopener noreferrer"
                                     className="w-full btn-apple btn-apple-secondary py-3.5 text-[14px] flex items-center justify-center gap-2"
                                 >
-                                    <ArrowSquareOut size={15} weight="bold" /> Live Preview
+                                    <ArrowSquareOut size={15} weight="bold" /> {siteSettings.productDetail.livePreviewLabel}
                                 </Link>
                             ) : (
                                 <button disabled className="w-full btn-apple bg-secondary/50 border border-border text-muted-foreground/40 cursor-not-allowed py-3.5 text-[14px]">
-                                    No Demo Available
+                                    {siteSettings.productDetail.noDemoLabel}
                                 </button>
                             )}
                         </div>
@@ -363,7 +523,7 @@ export default function ProductDetailsPage() {
                                 className="flex items-center justify-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground transition-colors py-2 group"
                             >
                                 <BookOpen size={14} weight="bold" className="group-hover:scale-110 transition-transform" />
-                                View Documentation
+                                {siteSettings.productDetail.documentationLabel}
                             </Link>
                         )}
                     </motion.div>
@@ -397,7 +557,7 @@ export default function ProductDetailsPage() {
 
                                 <div className="mb-6">
                                     <div className="flex items-center gap-2 mb-1">
-                                        <h2 className="text-[22px] font-bold text-foreground tracking-tight">Checkout</h2>
+                                        <h2 className="text-[22px] font-bold text-foreground tracking-tight">{siteSettings.productDetail.checkoutLabel}</h2>
                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground uppercase tracking-wider">
                                             via {gateway === "stripe" ? "Stripe" : "Razorpay"}
                                         </span>

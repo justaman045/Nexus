@@ -18,6 +18,7 @@ import {
 import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { generateLicense } from "@/lib/licenses";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 interface Order {
   id: string;
@@ -44,6 +45,7 @@ interface StripeSuccessData {
 }
 
 function OrderHistoryContent() {
+  const siteSettings = useSiteSettings();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -161,10 +163,10 @@ function OrderHistoryContent() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
           className="text-center mb-16"
         >
-          <p className="text-label mb-4">Order history</p>
-          <h1 className="text-display gradient-text mb-5">Track your orders.</h1>
+          <p className="text-label mb-4">{siteSettings.ordersPage.heading}</p>
+          <h1 className="text-display gradient-text mb-5">{siteSettings.ordersPage.subheading}</h1>
           <p className="text-body-large text-muted-foreground max-w-[440px] mx-auto">
-            Enter the email address used during checkout to view your purchase history.
+            {siteSettings.ordersPage.description}
           </p>
         </motion.div>
 

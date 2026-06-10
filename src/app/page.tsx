@@ -5,13 +5,14 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import {
-  ArrowRight, Lightning, Globe, ShieldCheck, Cpu, Code,
+  ArrowRight, Globe, ShieldCheck, Cpu, Code,
   Star, Plus, Minus, Rocket, Package, Storefront, Key,
   Sparkle, Check, ArrowUpRight,
 } from "@phosphor-icons/react";
 import { getHomepageContent, HomepageContent, defaultContent } from "@/lib/cms";
 import { getProducts, Product } from "@/lib/products";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
 const iv = (delay = 0) => ({
@@ -21,10 +22,18 @@ const iv = (delay = 0) => ({
   transition: { delay, duration: 0.85, ease: EASE },
 });
 
-const steps = [
-  { num: "01", icon: Storefront, title: "Browse the catalogue", desc: "Explore our exclusive software suite, built and sold only by Nexus.", color: "rgba(99,102,241,0.2)", border: "rgba(99,102,241,0.3)", accent: "#818cf8" },
-  { num: "02", icon: Key, title: "Secure checkout", desc: "One-click payment via Razorpay. Safe, instant, and hassle-free.", color: "rgba(168,85,247,0.2)", border: "rgba(168,85,247,0.3)", accent: "#c084fc" },
-  { num: "03", icon: Package, title: "Get your license", desc: "Receive your license key instantly. Access it anytime from your dashboard.", color: "rgba(236,72,153,0.2)", border: "rgba(236,72,153,0.3)", accent: "#f472b6" },
+const stepIcons = [Storefront, Key, Package];
+const stepColors = [
+  { color: "rgba(99,102,241,0.2)", border: "rgba(99,102,241,0.3)", accent: "#818cf8" },
+  { color: "rgba(168,85,247,0.2)", border: "rgba(168,85,247,0.3)", accent: "#c084fc" },
+  { color: "rgba(236,72,153,0.2)", border: "rgba(236,72,153,0.3)", accent: "#f472b6" },
+];
+
+const bentoVisuals = [
+  { icon: Code, orb: "rgba(99,102,241,0.15)", iconBg: "rgba(99,102,241,0.2)", iconBorder: "rgba(99,102,241,0.3)", iconColor: "#818cf8" },
+  { icon: Globe, orb: "rgba(168,85,247,0.15)", iconBg: "rgba(168,85,247,0.2)", iconBorder: "rgba(168,85,247,0.3)", iconColor: "#c084fc" },
+  { icon: ShieldCheck, orb: "rgba(236,72,153,0.15)", iconBg: "rgba(236,72,153,0.2)", iconBorder: "rgba(236,72,153,0.3)", iconColor: "#f472b6" },
+  { icon: Cpu, orb: "rgba(168,85,247,0.15)", iconBg: "rgba(168,85,247,0.2)", iconBorder: "rgba(168,85,247,0.3)", iconColor: "#c084fc" },
 ];
 
 function FAQItem({ q, a, dark }: { q: string; a: string; dark: boolean }) {
@@ -50,6 +59,7 @@ function FAQItem({ q, a, dark }: { q: string; a: string; dark: boolean }) {
 }
 
 export default function Home() {
+  const siteSettings = useSiteSettings();
   const [content, setContent] = useState<HomepageContent>(defaultContent);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -167,18 +177,16 @@ export default function Home() {
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.34, duration: 0.8, ease: EASE }}
               className="flex flex-wrap gap-2.5">
-              {[
-                { val: "10k+", label: "Active users", dot: "#6366f1" },
-                { val: "99.9%", label: "Uptime", dot: "#22c55e" },
-                { val: "50+", label: "Countries", dot: "#a855f7" },
-                { val: "< 1s", label: "Delivery", dot: "#f472b6" },
-              ].map(s => (
-                <div key={s.label} className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[12px]" style={glass}>
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: s.dot }} />
-                  <span className="font-bold" style={{ color: t1 }}>{s.val}</span>
-                  <span style={{ color: t3 }}>{s.label}</span>
-                </div>
-              ))}
+              {siteSettings.heroDecorStats.map((s, i) => {
+                const dots = ["#6366f1", "#22c55e", "#a855f7", "#f472b6", "#f59e0b"];
+                return (
+                  <div key={s.label} className="flex items-center gap-2 px-3.5 py-2 rounded-full text-[12px]" style={glass}>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dots[i % dots.length] }} />
+                    <span className="font-bold" style={{ color: t1 }}>{s.value}</span>
+                    <span style={{ color: t3 }}>{s.label}</span>
+                  </div>
+                );
+              })}
             </motion.div>
           </div>
 
@@ -272,7 +280,7 @@ export default function Home() {
       {/* ══ TRUST STRIP ══ */}
       <section className="border-y py-4 px-6 overflow-hidden" style={{ borderColor: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.07)", background: dark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)" }}>
         <div className="flex items-center justify-center flex-wrap gap-x-10 gap-y-2">
-          {["License-based access", "Built entirely in-house", "Instant delivery", "No resellers ever", "Razorpay secured"].map((t, i) => (
+          {siteSettings.trustStrip.map((t, i) => (
             <span key={i} className="flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.12em]" style={{ color: t4 }}>
               <Check size={11} weight="bold" style={{ color: "#6366f1" }} />
               {t}
@@ -301,64 +309,44 @@ export default function Home() {
           style={{ background: "radial-gradient(ellipse, rgba(99,102,241,0.1) 0%, transparent 70%)", filter: "blur(60px)", opacity: orbOpacity }} />
         <div className="container-pro relative z-10">
           <motion.div {...iv()} className="text-center mb-14">
-            <p className="text-label mb-4">What we build</p>
-            <h2 className="text-display gradient-text">Engineered in-house.<br />Sold exclusively.</h2>
+            <p className="text-label mb-4">{siteSettings.bentoGrid.heading}</p>
+            <h2 className="text-display gradient-text">{siteSettings.bentoGrid.subheading}</h2>
             <p className="text-[16px] mt-5 max-w-[460px] mx-auto leading-relaxed text-muted-foreground">
-              Every line of code, every design decision — crafted by Nexus and sold only here.
+              {siteSettings.bentoGrid.description}
             </p>
           </motion.div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 auto-rows-[240px]">
-            {[
-              { span: 2, icon: Code, title: "Developer Tooling", desc: "Purpose-built instruments for speed, precision, and deep focus.", orb: "rgba(99,102,241,0.15)", iconBg: "rgba(99,102,241,0.2)", iconBorder: "rgba(99,102,241,0.3)", iconColor: "#818cf8" },
-            ].map((c, i) => (
-              <motion.div key={i} {...iv(0)} className={`md:col-span-${c.span} rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden`} style={glass}>
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-                  style={{ background: `radial-gradient(ellipse at 30% 50%, ${c.orb} 0%, transparent 70%)` }} />
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center relative z-10" style={{ background: c.iconBg, border: `1px solid ${c.iconBorder}` }}>
-                  <c.icon size={20} weight="fill" style={{ color: c.iconColor }} />
-                </div>
-                <div className="relative z-10">
-                  <h3 className="text-[20px] font-bold tracking-tight mb-2 text-foreground">{c.title}</h3>
-                  <p className="text-[15px] leading-relaxed text-muted-foreground">{c.desc}</p>
-                </div>
-              </motion.div>
-            ))}
-
-            <motion.div {...iv(0.08)} className="rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden"
-              style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.4) 0%, rgba(168,85,247,0.35) 100%)", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 8px 40px rgba(99,102,241,0.25), inset 0 1px 0 rgba(255,255,255,0.15)" }}>
-              <Globe size={72} weight="thin" className="absolute -right-4 -top-2" style={{ color: "rgba(255,255,255,0.12)" }} />
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)" }}>
-                <Globe size={20} weight="fill" className="text-white" />
-              </div>
-              <div>
-                <h3 className="text-[20px] font-bold tracking-tight mb-2 text-white">Design Systems</h3>
-                <p className="text-[15px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>Pixel-perfect interfaces for the modern web.</p>
-              </div>
-            </motion.div>
-
-            <motion.div {...iv(0.12)} className="rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden" style={glass}>
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-                style={{ background: "radial-gradient(ellipse at center, rgba(236,72,153,0.15) 0%, transparent 70%)" }} />
-              <ShieldCheck size={28} weight="fill" className="relative z-10" style={{ color: "rgba(236,72,153,0.7)" }} />
-              <div className="relative z-10">
-                <h3 className="text-[18px] font-bold mb-1 text-foreground">Security First</h3>
-                <p className="text-[14px] leading-relaxed text-muted-foreground">End-to-end encrypted. Zero compromise.</p>
-              </div>
-            </motion.div>
-
-            <motion.div {...iv(0.16)} className="md:col-span-2 rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden" style={glass}>
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-                style={{ background: "radial-gradient(ellipse at 70% 50%, rgba(168,85,247,0.15) 0%, transparent 70%)" }} />
-              <div className="flex gap-3 relative z-10">
-                <Cpu size={28} weight="fill" style={{ color: "rgba(168,85,247,0.7)" }} />
-                <Lightning size={28} weight="fill" style={{ color: "rgba(99,102,241,0.7)" }} />
-              </div>
-              <div className="relative z-10">
-                <h3 className="text-[20px] font-bold mb-2 text-foreground">Silicon Native & Zero Latency</h3>
-                <p className="text-[15px] leading-relaxed text-muted-foreground">Optimized for modern hardware. Instant sync, everywhere.</p>
-              </div>
-            </motion.div>
+            {siteSettings.bentoGrid.features.map((f, i) => {
+              const v = bentoVisuals[i % bentoVisuals.length];
+              const spanClass = i === 0 || i === siteSettings.bentoGrid.features.length - 1 ? "md:col-span-2" : "";
+              const isGradient = i === 1;
+              return isGradient ? (
+                <motion.div key={i} {...iv(0.08)} className={`rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden ${spanClass}`}
+                  style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.4) 0%, rgba(168,85,247,0.35) 100%)", border: "1px solid rgba(255,255,255,0.15)", boxShadow: "0 8px 40px rgba(99,102,241,0.25), inset 0 1px 0 rgba(255,255,255,0.15)" }}>
+                  <Globe size={72} weight="thin" className="absolute -right-4 -top-2" style={{ color: "rgba(255,255,255,0.12)" }} />
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)" }}>
+                    <v.icon size={20} weight="fill" className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-[20px] font-bold tracking-tight mb-2 text-white">{f.title}</h3>
+                    <p className="text-[15px] leading-relaxed" style={{ color: "rgba(255,255,255,0.65)" }}>{f.description}</p>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div key={i} {...iv(i * 0.08)} className={`rounded-2xl p-8 flex flex-col justify-between group cursor-default relative overflow-hidden ${spanClass}`} style={glass}>
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
+                    style={{ background: `radial-gradient(ellipse at ${i === 0 ? "30% 50%" : i === 2 ? "center" : "70% 50%"}, ${v.orb} 0%, transparent 70%)` }} />
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center relative z-10" style={{ background: v.iconBg, border: `1px solid ${v.iconBorder}` }}>
+                    <v.icon size={20} weight="fill" style={{ color: v.iconColor }} />
+                  </div>
+                  <div className="relative z-10">
+                    <h3 className="text-[20px] font-bold tracking-tight mb-2 text-foreground">{f.title}</h3>
+                    <p className="text-[15px] leading-relaxed text-muted-foreground">{f.description}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -368,9 +356,9 @@ export default function Home() {
         <div className="container-pro">
           <motion.div {...iv()} className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-5 mb-12">
             <div>
-              <p className="text-label mb-3">The Catalogue</p>
-              <h2 className="text-display gradient-text">Our software suite.</h2>
-              <p className="text-[16px] mt-3 text-muted-foreground">Curated products for the modern builder.</p>
+              <p className="text-label mb-3">{siteSettings.productSectionHeadings.heading}</p>
+              <h2 className="text-display gradient-text">{siteSettings.productSectionHeadings.subheading}</h2>
+              <p className="text-[16px] mt-3 text-muted-foreground">{siteSettings.productSectionHeadings.description}</p>
             </div>
             <Link href="/products" className="flex items-center gap-2 text-[13px] font-semibold px-5 py-2.5 rounded-full shrink-0" style={{ ...glass, color: t2 }}>
               View all <ArrowUpRight size={13} weight="bold" />
@@ -434,26 +422,31 @@ export default function Home() {
         <div className="absolute inset-0 pointer-events-none" style={{ opacity: orbOpacity * 0.5, background: "radial-gradient(ellipse at 50% 100%, rgba(168,85,247,0.15) 0%, transparent 65%)", filter: "blur(40px)" }} />
         <div className="container-pro relative z-10">
           <motion.div {...iv()} className="text-center mb-14">
-            <p className="text-label mb-3">Simple by design</p>
-            <h2 className="text-display gradient-text">How it works.</h2>
+            <p className="text-label mb-3">{siteSettings.howItWorks.heading}</p>
+            <h2 className="text-display gradient-text">{siteSettings.howItWorks.subheading}</h2>
           </motion.div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {steps.map((step, i) => (
-              <motion.div key={step.num} {...iv(i * 0.1)} className="rounded-2xl p-8 flex flex-col gap-7 relative overflow-hidden group" style={glass}>
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
-                  style={{ background: `radial-gradient(ellipse at 30% 30%, ${step.color} 0%, transparent 70%)` }} />
-                <div className="flex items-start justify-between relative z-10">
-                  <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: step.color, border: `1px solid ${step.border}` }}>
-                    <step.icon size={20} weight="fill" style={{ color: step.accent }} />
+            {siteSettings.howItWorks.steps.map((step, i) => {
+              const Icon = stepIcons[i % stepIcons.length];
+              const sc = stepColors[i % stepColors.length];
+              const num = String(i + 1).padStart(2, "0");
+              return (
+                <motion.div key={num} {...iv(i * 0.1)} className="rounded-2xl p-8 flex flex-col gap-7 relative overflow-hidden group" style={glass}>
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"
+                    style={{ background: `radial-gradient(ellipse at 30% 30%, ${sc.color} 0%, transparent 70%)` }} />
+                  <div className="flex items-start justify-between relative z-10">
+                    <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: sc.color, border: `1px solid ${sc.border}` }}>
+                      <Icon size={20} weight="fill" style={{ color: sc.accent }} />
+                    </div>
+                    <span className="font-mono text-[26px] font-bold text-foreground/[0.06]">{num}</span>
                   </div>
-                  <span className="font-mono text-[26px] font-bold text-foreground/[0.06]">{step.num}</span>
-                </div>
-                <div className="relative z-10">
-                  <h3 className="text-[18px] font-bold tracking-tight mb-2 text-foreground">{step.title}</h3>
-                  <p className="text-[14px] leading-relaxed text-muted-foreground">{step.desc}</p>
-                </div>
-              </motion.div>
-            ))}
+                  <div className="relative z-10">
+                    <h3 className="text-[18px] font-bold tracking-tight mb-2 text-foreground">{step.title}</h3>
+                    <p className="text-[14px] leading-relaxed text-muted-foreground">{step.description}</p>
+                  </div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -463,8 +456,8 @@ export default function Home() {
         <section className="py-24 px-6 sm:px-8 lg:px-12">
           <div className="container-pro">
             <motion.div {...iv()} className="text-center mb-14">
-              <p className="text-label mb-3">Social proof</p>
-              <h2 className="text-display gradient-text">Trusted by builders.</h2>
+              <p className="text-label mb-3">{siteSettings.sectionHeadings.testimonials.heading}</p>
+              <h2 className="text-display gradient-text">{siteSettings.sectionHeadings.testimonials.subheading}</h2>
             </motion.div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {testimonials.slice(0, 3).map((t, i) => (
@@ -495,8 +488,8 @@ export default function Home() {
         <section className="py-24 px-6 sm:px-8 lg:px-12">
           <div className="container-pro max-w-[720px]">
             <motion.div {...iv()} className="text-center mb-12">
-              <p className="text-label mb-3">Got questions?</p>
-              <h2 className="text-display gradient-text">Common answers.</h2>
+              <p className="text-label mb-3">{siteSettings.sectionHeadings.faq.heading}</p>
+              <h2 className="text-display gradient-text">{siteSettings.sectionHeadings.faq.subheading}</h2>
             </motion.div>
             <motion.div {...iv()} className="rounded-2xl p-8" style={glass}>
               {faq.map((item, i) => <FAQItem key={i} q={item.q} a={item.a} dark={dark} />)}
@@ -523,18 +516,18 @@ export default function Home() {
           <div className="absolute bottom-0 right-1/4 w-[250px] h-[180px] pointer-events-none"
             style={{ background: "radial-gradient(ellipse, rgba(236,72,153,0.25) 0%, transparent 70%)", filter: "blur(40px)", opacity: orbOpacity * 0.8 }} />
           <div className="relative z-10">
-            <p className="text-label mb-5">Ready to start?</p>
-            <h2 className="text-display text-foreground">Build something<br />remarkable.</h2>
+            <p className="text-label mb-5">{siteSettings.finalCta.heading}</p>
+            <h2 className="text-display text-foreground">{siteSettings.finalCta.subheading}</h2>
             <p className="text-[16px] mt-6 max-w-[420px] mx-auto leading-relaxed text-muted-foreground">
-              Join thousands of creators using Nexus to ship faster, build smarter, and stand out.
+              {siteSettings.finalCta.description}
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mt-12">
               <Link href="/products" className="btn-apple px-9 py-4 font-semibold text-[14px] flex items-center gap-2"
                 style={{ background: "linear-gradient(135deg, #6366f1 0%, #a855f7 100%)", color: "white", boxShadow: "0 8px 24px rgba(99,102,241,0.35)" }}>
-                Browse Products <ArrowRight size={15} weight="bold" />
+                {siteSettings.finalCta.primaryButton} <ArrowRight size={15} weight="bold" />
               </Link>
               <Link href="/contact" className="btn-apple btn-apple-secondary px-9 py-4 text-[14px]">
-                Contact Us
+                {siteSettings.finalCta.secondaryButton}
               </Link>
             </div>
           </div>

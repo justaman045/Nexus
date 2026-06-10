@@ -6,8 +6,10 @@ import Link from "next/link";
 import { MagnifyingGlass, ArrowRight, CircleNotch } from "@phosphor-icons/react";
 import { getProducts, Product } from "@/lib/products";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 export default function ProductsPage() {
+    const siteSettings = useSiteSettings();
     const [products, setProducts] = useState<Product[]>([]);
     const [categories, setCategories] = useState<string[]>(["All"]);
     const [filter, setFilter] = useState("All");
@@ -56,7 +58,7 @@ export default function ProductsPage() {
                         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                         className="text-label"
                     >
-                        The Catalogue
+                        {siteSettings.productsPage.heading}
                     </motion.p>
                     <motion.h1
                         initial={{ opacity: 0, y: 20 }}
@@ -64,7 +66,7 @@ export default function ProductsPage() {
                         transition={{ delay: 0.08, duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
                         className="text-hero gradient-text"
                     >
-                        Premium software,<br />built in-house.
+                        {siteSettings.productsPage.subheading}
                     </motion.h1>
                     <motion.p
                         initial={{ opacity: 0, y: 16 }}
@@ -72,7 +74,7 @@ export default function ProductsPage() {
                         transition={{ delay: 0.16, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
                         className="text-body-large text-muted-foreground max-w-[520px] mx-auto"
                     >
-                        Every product is designed, engineered, and sold exclusively here. License-based access. Instant delivery.
+                        {siteSettings.productsPage.description}
                     </motion.p>
 
                     {/* Product count badge */}

@@ -10,15 +10,12 @@ import {
   CircleNotch,
   X,
   FloppyDisk,
+  Package,
 } from "@phosphor-icons/react";
 import { Product, getProducts, deleteProduct, addProduct, updateProduct } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
-
-const inputCls =
-  "w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-white/20 focus:bg-white/[0.05] transition-all";
-
-const labelCls = "block text-[10px] font-bold text-white/30 uppercase tracking-[0.15em] mb-2";
+import { Glass, inputCls, labelCls, tableHeaderCls, LoadingSkeleton, StatusBadge } from "../_components/shared";
 
 export default function AdminProducts() {
   const { format: formatCurrency } = useCurrency();
@@ -36,9 +33,7 @@ export default function AdminProducts() {
       p.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     setIsLoading(true);
@@ -100,59 +95,71 @@ export default function AdminProducts() {
         </div>
         <button
           onClick={handleOpenAdd}
-          className="flex items-center gap-2 bg-white text-black font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-[0.98]"
+          className="flex items-center gap-2 font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all active:scale-[0.98] text-white"
+          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}
         >
           <Plus size={15} weight="bold" /> New Product
         </button>
       </div>
 
       {/* Search */}
-      <div className="relative">
+      <div className="relative max-w-sm">
         <MagnifyingGlass size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/25" />
         <input
           type="text"
           placeholder="Search products..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-2xl pl-11 pr-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-white/15 transition-all max-w-sm"
+          className="w-full bg-white/[0.02] border border-white/[0.05] rounded-2xl pl-11 pr-4 py-3.5 text-white text-[14px] font-medium placeholder:text-white/20 focus:outline-none focus:border-indigo-400/40 focus:ring-2 focus:ring-indigo-500/20 transition-all"
         />
       </div>
 
       {/* Table */}
-      <div className="rounded-[28px] overflow-hidden" style={{ background: "rgba(255,255,255,0.05)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", border: "1px solid rgba(255,255,255,0.09)" }}>
+      <Glass className="rounded-[28px] overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-white/[0.02] border-b border-white/[0.04]">
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Product</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Category</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Price</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em]">Status</th>
-              <th className="px-8 py-5 text-[10px] font-bold text-white/25 uppercase tracking-[0.18em] text-right">Actions</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Product</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Category</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Price</th>
+              <th className={`px-8 py-5 ${tableHeaderCls}`}>Status</th>
+              <th className={`px-8 py-5 ${tableHeaderCls} text-right`}>Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/[0.03]">
             {isLoading ? (
-              <tr>
-                <td colSpan={5} className="py-16 text-center">
-                  <CircleNotch size={24} className="animate-spin text-white/20 mx-auto" />
-                </td>
-              </tr>
+              <LoadingSkeleton cols={5} rows={6} />
             ) : filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-16 text-center text-white/25 text-[13px]">
-                  {searchQuery ? "No products match your search" : "No products yet. Click New Product to add one."}
+                <td colSpan={5} className="py-16 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <Package size={22} className="text-white/20" />
+                    </div>
+                    <p className="text-white/25 text-[13px]">
+                      {searchQuery ? "No products match your search" : "No products yet. Click New Product to add one."}
+                    </p>
+                    {!searchQuery && (
+                      <button
+                        onClick={handleOpenAdd}
+                        className="flex items-center gap-2 text-[12px] font-semibold text-white/40 hover:text-white/70 transition-colors"
+                      >
+                        <Plus size={13} weight="bold" /> Add Your First Product
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : (
               filteredProducts.map((product) => (
-                <tr key={product.id} className="hover:bg-white/[0.015] transition-colors">
+                <tr key={product.id} className="hover:bg-white/[0.015] transition-colors relative group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl overflow-hidden bg-white/[0.04] border border-white/[0.06] shrink-0 flex items-center justify-center">
                         {product.imageUrl ? (
                           <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-blue-500/20 to-blue-500/5" />
+                          <Package size={18} className="text-white/20" />
                         )}
                       </div>
                       <div>
@@ -170,22 +177,19 @@ export default function AdminProducts() {
                     <span className="text-white text-[14px] font-bold">{formatCurrency(product.price)}</span>
                   </td>
                   <td className="px-8 py-5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
-                      <span className="text-[11px] font-bold text-emerald-400/60 uppercase tracking-wider">Active</span>
-                    </div>
+                    <StatusBadge status="active" glow />
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex justify-end gap-2">
                       <button
                         onClick={() => handleOpenEdit(product)}
-                        className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-white/80 hover:bg-white/[0.07] transition-all"
+                        className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-white/80 hover:bg-white/[0.07] transition-all active:scale-90"
                       >
                         <PencilSimple size={14} />
                       </button>
                       <button
                         onClick={() => handleDelete(product.id)}
-                        className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-red-400/70 hover:bg-red-500/[0.05] transition-all"
+                        className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-red-400/70 hover:bg-red-500/[0.05] transition-all active:scale-90"
                       >
                         <Trash size={14} />
                       </button>
@@ -196,7 +200,7 @@ export default function AdminProducts() {
             )}
           </tbody>
         </table>
-      </div>
+      </Glass>
 
       {/* Modal */}
       <AnimatePresence>
@@ -216,7 +220,11 @@ export default function AdminProducts() {
               transition={{ type: "spring", damping: 28, stiffness: 320 }}
               className="fixed inset-0 z-[70] flex items-center justify-center p-6 pointer-events-none"
             >
-              <div className="w-full max-w-3xl max-h-[90vh] rounded-[40px] pointer-events-auto overflow-hidden flex flex-col shadow-[0_50px_120px_rgba(0,0,0,0.8)]" style={{ background: "rgba(10,10,20,0.85)", backdropFilter: "blur(40px) saturate(200%)", WebkitBackdropFilter: "blur(40px) saturate(200%)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div className="w-full max-w-3xl max-h-[90vh] rounded-[40px] pointer-events-auto overflow-hidden flex flex-col shadow-[0_50px_120px_rgba(0,0,0,0.8)]"
+                style={{ background: "rgba(10,10,20,0.85)", backdropFilter: "blur(40px) saturate(200%)", WebkitBackdropFilter: "blur(40px) saturate(200%)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                {/* Accent bar */}
+                <div style={{ height: "3px", background: "linear-gradient(90deg, #6366f1, #a855f7)", flexShrink: 0 }} />
+
                 {/* Modal header */}
                 <div className="flex justify-between items-center px-10 py-8 border-b border-white/[0.04]">
                   <div>
@@ -320,7 +328,8 @@ export default function AdminProducts() {
                   <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="flex items-center gap-2 bg-white text-black font-bold text-[13px] px-7 py-2.5 rounded-xl transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-40"
+                    className="flex items-center gap-2 font-bold text-[13px] px-7 py-2.5 rounded-xl transition-all active:scale-[0.98] disabled:opacity-40 text-white"
+                    style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}
                   >
                     {isSaving ? <CircleNotch size={14} className="animate-spin" /> : <FloppyDisk size={14} weight="fill" />}
                     {currentProduct.id ? "Save Changes" : "Add Product"}
