@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { CurrencyProvider } from "@/components/CurrencyProvider";
 import { SiteSettingsProvider } from "@/contexts/SiteSettingsContext";
 import CookieBanner from "@/components/CookieBanner";
+import { Analytics } from '@vercel/analytics/next';
 
 export const metadata: Metadata = {
   title: {
@@ -58,6 +59,7 @@ export default function RootLayout({
             </SiteSettingsProvider>
           </CurrencyProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
