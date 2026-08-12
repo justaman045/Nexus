@@ -38,7 +38,7 @@
     "@types/shortid": "^2.2.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.23",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
