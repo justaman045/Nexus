@@ -11,17 +11,19 @@ export default function AdminOrders() {
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
-    getOrders().then((data) => {
-      setOrders(data);
-      setIsLoading(false);
-    });
+    getOrders()
+      .then((data) => {
+        setOrders(data);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   const filteredOrders = orders.filter(
     (o) =>
       o.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       o.paymentId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      o.customerInfo.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      o.customerInfo?.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const formatDate = (ts: unknown) => {
@@ -115,7 +117,10 @@ export default function AdminOrders() {
                       <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-indigo-500/[0.12] flex items-center justify-center shrink-0">
                           <span className="text-[11px] font-bold text-indigo-400/70">
-                            {(order.customerInfo?.name || order.customerInfo?.email || "?")[0].toUpperCase()}
+                            {(() => {
+                              const initial = (order.customerInfo?.name || order.customerInfo?.email || "").trim();
+                              return initial ? initial[0].toUpperCase() : "?";
+                            })()}
                           </span>
                         </div>
                         <div>
@@ -126,7 +131,7 @@ export default function AdminOrders() {
                     </td>
                     <td className="px-8 py-5">
                       <p className="text-white text-[14px] font-bold">
-                        {new Intl.NumberFormat("en-US", { style: "currency", currency: order.currency || "USD" }).format(order.amount / 100)}
+                        {new Intl.NumberFormat("en-US", { style: "currency", currency: order.currency || "USD" }).format(order.amount)}
                       </p>
                     </td>
                     <td className="px-8 py-5 text-right">

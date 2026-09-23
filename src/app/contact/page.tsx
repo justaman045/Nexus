@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { EnvelopeSimple, MapPin, Phone, PaperPlaneTilt, CircleNotch } from "@phosphor-icons/react";
+import { collection, addDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { getHomepageContent, defaultContent, HomepageContent } from "@/lib/cms";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -14,6 +16,7 @@ export default function ContactPage() {
     const [formData, setFormData] = useState({ name: "", email: "", subject: "", message: "" });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [sent, setSent] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     useEffect(() => {
         getHomepageContent().then(d => { if (d) setContent(d); }).catch(() => {});
@@ -22,10 +25,20 @@ export default function ContactPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
-        await new Promise(r => setTimeout(r, 1400));
-        setSent(true);
-        setIsSubmitting(false);
-        setFormData({ name: "", email: "", subject: "", message: "" });
+        setSubmitError(null);
+        try {
+            await addDoc(collection(db, "contacts"), {
+                ...formData,
+                createdAt: new Date().toISOString(),
+            });
+            setSent(true);
+            setFormData({ name: "", email: "", subject: "", message: "" });
+        } catch (err) {
+            console.error("Error submitting contact form:", err);
+            setSubmitError("Failed to send your message. Please try again.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const contactInfo = content.contact || {
@@ -140,6 +153,11 @@ export default function ContactPage() {
                                 </div>
                             ) : (
                                 <form onSubmit={handleSubmit} className="space-y-5">
+                                    {submitError && (
+                                        <div className="px-4 py-3 rounded-xl bg-red-500/[0.07] border border-red-500/20 text-[13px] text-red-500/90">
+                                            {submitError}
+                                        </div>
+                                    )}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         {[
                                             { label: siteSettings.contactPage.formLabels.name, name: "name", type: "text", placeholder: "Your name" },

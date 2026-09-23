@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { MagnifyingGlass, ArrowRight, CircleNotch } from "@phosphor-icons/react";
+import { MagnifyingGlass, ArrowRight, CircleNotch, Star } from "@phosphor-icons/react";
 import { getProducts, Product } from "@/lib/products";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
@@ -34,7 +34,13 @@ export default function ProductsPage() {
 
     const filteredProducts = products.filter((product) => {
         const matchesFilter = filter === "All" || product.category === filter;
-        const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
+        const term = search.trim().toLowerCase();
+        if (!term) return matchesFilter;
+        const topicMatch = product.github?.topics?.some((t) => t.toLowerCase().includes(term)) ?? false;
+        const fieldHits = [product.name, product.description, product.longDescription, product.category]
+            .filter(Boolean)
+            .some((f) => f!.toLowerCase().includes(term));
+        const matchesSearch = fieldHits || topicMatch;
         return matchesFilter && matchesSearch;
     });
 
@@ -185,11 +191,16 @@ function ProductCard({ product, index }: { product: Product; index: number }) {
                 <div className="space-y-3 px-1">
                     <div className="flex items-start justify-between gap-3">
                         <h3 className="text-[20px] font-bold text-foreground tracking-tight leading-tight">{product.name}</h3>
-                        {product.version && (
+                        {product.github ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest shrink-0 pt-1">
+                                <Star size={10} weight="fill" className="text-amber-500" />
+                                {product.github.stars.toLocaleString()}
+                            </span>
+                        ) : product.version ? (
                             <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest shrink-0 pt-1">
                                 v{product.version}
                             </span>
-                        )}
+                        ) : null}
                     </div>
                     <p className="text-[14px] text-muted-foreground leading-relaxed line-clamp-2">
                         {product.description}

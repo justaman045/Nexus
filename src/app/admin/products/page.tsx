@@ -11,11 +11,35 @@ import {
   X,
   FloppyDisk,
   Package,
+  GithubLogo,
+  ArrowClockwise,
+  Star,
 } from "@phosphor-icons/react";
 import { Product, getProducts, deleteProduct, addProduct, updateProduct } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { Glass, inputCls, labelCls, tableHeaderCls, LoadingSkeleton, StatusBadge } from "../_components/shared";
+import {
+  parseRepoInput,
+  fetchGitHubRepo,
+  mergeSyncedWithManual,
+  disconnectRepo,
+  GitHubRepoData,
+} from "@/lib/github";
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
 
 export default function AdminProducts() {
   const { format: formatCurrency } = useCurrency();
@@ -26,54 +50,147 @@ export default function AdminProducts() {
   const [currentProduct, setCurrentProduct] = useState<Partial<Product>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [githubInput, setGithubInput] = useState("");
+  const [githubLoading, setGithubLoading] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
+  const [githubPreview, setGithubPreview] = useState<GitHubRepoData | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
 
   const filteredProducts = products.filter(
     (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase())
+      (p.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
     setIsLoading(true);
-    const [productsData, contentData] = await Promise.all([getProducts(), getHomepageContent()]);
-    setProducts(productsData);
-    setCategories(contentData.categories?.length ? contentData.categories : ["Developer Tool", "Design", "Productivity"]);
-    setIsLoading(false);
+    try {
+      const [productsData, contentData] = await Promise.all([getProducts(), getHomepageContent()]);
+      setProducts(productsData);
+      setCategories(contentData.categories?.length ? contentData.categories : ["Developer Tool", "Design", "Productivity"]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this product?")) return;
-    await deleteProduct(id);
-    await loadData();
+    try {
+      await deleteProduct(id);
+      await loadData();
+    } catch (e) {
+      console.error(e);
+      alert("Failed to delete product.");
+    }
   };
 
   const handleOpenAdd = () => {
     setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
+    setGithubInput("");
+    setGithubPreview(null);
+    setGithubError(null);
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (product: Product) => {
     setCurrentProduct({ ...product });
+    setGithubInput(product.repoUrl || "");
+    setGithubPreview(null);
+    setGithubError(null);
     setIsModalOpen(true);
   };
 
+  const handleGitHubFetch = async () => {
+    const parsed = parseRepoInput(githubInput);
+    if (!parsed) {
+      setGithubError('Enter a GitHub repository as "owner/repo" or a full URL.');
+      return;
+    }
+    setGithubLoading(true);
+    setGithubError(null);
+    try {
+      const data = await fetchGitHubRepo(parsed.owner, parsed.repo);
+      setCurrentProduct((prev) => mergeSyncedWithManual(prev, data));
+      setGithubPreview(data);
+      setGithubInput(data.htmlUrl);
+    } catch (e) {
+      setGithubError(e instanceof Error ? e.message : "Failed to fetch from GitHub.");
+    } finally {
+      setGithubLoading(false);
+    }
+  };
+
+  const handleDisconnect = () => {
+    setCurrentProduct(disconnectRepo(currentProduct));
+    setGithubInput("");
+    setGithubPreview(null);
+    setGithubError(null);
+  };
+
+  const syncProductById = async (product: Product) => {
+    if (!product.repoUrl) return;
+    const parsed = parseRepoInput(product.repoUrl);
+    if (!parsed) return;
+    setSyncingId(product.id);
+    try {
+      const data = await fetchGitHubRepo(parsed.owner, parsed.repo);
+      await updateProduct(product.id, mergeSyncedWithManual(product, data));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Sync failed.");
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    const synced = products.filter((p) => p.repoUrl);
+    for (const p of synced) {
+      await syncProductById(p);
+    }
+    await loadData();
+  };
+
   const handleSave = async () => {
+    if (!currentProduct.name?.trim()) {
+      alert("Product name is required.");
+      return;
+    }
+    if (currentProduct.price === undefined || currentProduct.price < 0) {
+      alert("Please enter a valid price.");
+      return;
+    }
+    if (!currentProduct.category) {
+      alert("Category is required.");
+      return;
+    }
     setIsSaving(true);
     try {
+      const { id, purchases, createdAt, ...rest } = currentProduct;
+      void id; void purchases; void createdAt;
       const productToSave = {
-        ...currentProduct,
-        features: currentProduct.features?.map((f) => f.trim()).filter(Boolean) || [],
-        descriptionType: currentProduct.descriptionType ?? "plain",
+        name: rest.name || "",
+        description: rest.description || "",
+        price: rest.price ?? 0,
+        imageUrl: rest.imageUrl || "",
+        category: rest.category || "",
+        version: rest.version,
+        demoUrl: rest.demoUrl,
+        downloadUrl: rest.downloadUrl,
+        documentationUrl: rest.documentationUrl,
+        longDescription: rest.longDescription,
+        descriptionType: rest.descriptionType ?? "plain",
+        features: rest.features?.map((f) => f.trim()).filter(Boolean) || [],
+        repoUrl: rest.repoUrl,
+        github: rest.github,
       };
       if (currentProduct.id) {
         await updateProduct(currentProduct.id, productToSave);
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { id, purchases, createdAt, ...newData } = productToSave as any;
-        void id; void purchases; void createdAt;
-        await addProduct(newData);
+        await addProduct(productToSave);
       }
       setIsModalOpen(false);
       await loadData();
@@ -93,13 +210,26 @@ export default function AdminProducts() {
           <h1 className="text-[28px] font-bold text-white tracking-tight">Products</h1>
           <p className="text-white/30 text-[14px] mt-1">Manage your software catalogue</p>
         </div>
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center gap-2 font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all active:scale-[0.98] text-white"
-          style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}
-        >
-          <Plus size={15} weight="bold" /> New Product
-        </button>
+        <div className="flex items-center gap-3">
+          {products.some((p) => p.repoUrl) && (
+            <button
+              onClick={handleSyncAll}
+              disabled={syncingId !== null}
+              className="flex items-center gap-2 font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all active:scale-[0.98] disabled:opacity-40 text-white/60 hover:text-white"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+            >
+              <ArrowClockwise size={14} weight="bold" className={syncingId !== null ? "animate-spin" : ""} />
+              Sync All
+            </button>
+          )}
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all active:scale-[0.98] text-white"
+            style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}
+          >
+            <Plus size={15} weight="bold" /> New Product
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -164,7 +294,22 @@ export default function AdminProducts() {
                       </div>
                       <div>
                         <p className="text-white text-[14px] font-semibold">{product.name}</p>
-                        <p className="text-white/30 text-[11px] mt-0.5 font-mono">v{product.version || "1.0.0"}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-white/30 text-[11px] font-mono">v{product.version || "1.0.0"}</p>
+                          {product.github && (
+                            <a
+                              href={product.github.htmlUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-white/40 hover:text-white/70 transition-colors"
+                            >
+                              <GithubLogo size={10} weight="fill" />
+                              <Star size={9} weight="fill" />
+                              {product.github.stars.toLocaleString()}
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -181,6 +326,16 @@ export default function AdminProducts() {
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex justify-end gap-2">
+                      {product.repoUrl && (
+                        <button
+                          onClick={() => syncProductById(product)}
+                          disabled={syncingId !== null}
+                          title={`Re-sync from ${product.repoUrl}`}
+                          className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-white/80 hover:bg-white/[0.07] transition-all active:scale-90 disabled:opacity-40"
+                        >
+                          <ArrowClockwise size={14} className={syncingId === product.id ? "animate-spin" : ""} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleOpenEdit(product)}
                         className="w-9 h-9 rounded-xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center text-white/30 hover:text-white/80 hover:bg-white/[0.07] transition-all active:scale-90"
@@ -262,6 +417,75 @@ export default function AdminProducts() {
                       <label className={labelCls}>Cover Image URL</label>
                       <input type="text" value={currentProduct.imageUrl || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, imageUrl: e.target.value })} className={inputCls} placeholder="https://..." />
                     </div>
+                    <div className="col-span-2">
+                      <div className="rounded-2xl border border-white/[0.06] p-5 bg-white/[0.02]">
+                        <div className="flex items-center justify-between mb-3">
+                          <label className={labelCls} style={{ marginBottom: 0 }}>GitHub Repository</label>
+                          <GithubLogo size={15} className="text-white/30" />
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={githubInput}
+                            onChange={(e) => setGithubInput(e.target.value)}
+                            className={inputCls}
+                            placeholder="owner/repo or https://github.com/owner/repo"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleGitHubFetch}
+                            disabled={githubLoading}
+                            className="shrink-0 flex items-center gap-2 font-bold text-[12px] px-4 rounded-xl transition-all active:scale-[0.98] disabled:opacity-40 text-white"
+                            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                          >
+                            {githubLoading ? <CircleNotch size={13} className="animate-spin" /> : <ArrowClockwise size={13} weight="bold" />}
+                            {currentProduct.github ? "Re-sync" : "Fetch from GitHub"}
+                          </button>
+                        </div>
+                        {githubError && <p className="mt-2 text-[11px] text-red-400/80">{githubError}</p>}
+                        {githubPreview ? (
+                          <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                            <img src={githubPreview.avatarUrl} alt="" className="w-9 h-9 rounded-full border border-white/10 object-cover" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white text-[12px] font-semibold truncate">{githubPreview.fullName}</p>
+                              <p className="text-white/30 text-[11px] truncate">{githubPreview.description || "No description"}</p>
+                              <p className="text-white/30 text-[10px] mt-0.5">
+                                <Star size={9} weight="fill" className="inline -mt-0.5" /> {githubPreview.stars.toLocaleString()} · {githubPreview.language || "—"} · {githubPreview.license || "no license"}
+                                {githubPreview.release ? ` · v${githubPreview.release.tagName.replace(/^v/i, "")}` : ""}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleDisconnect}
+                              title="Disconnect from GitHub"
+                              className="shrink-0 w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-white/30 hover:text-red-400/70 transition-all"
+                            >
+                              <X size={13} />
+                            </button>
+                          </div>
+                        ) : currentProduct.github ? (
+                          <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                            <img src={currentProduct.github.avatarUrl} alt="" className="w-9 h-9 rounded-full border border-white/10 object-cover" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-white text-[12px] font-semibold truncate">{currentProduct.github.owner}/{currentProduct.github.repo}</p>
+                              <p className="text-white/30 text-[10px] mt-0.5">
+                                Synced {timeAgo(currentProduct.github.syncedAt)} · <Star size={9} weight="fill" className="inline -mt-0.5" /> {currentProduct.github.stars.toLocaleString()} · {currentProduct.github.language || "—"}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleDisconnect}
+                              className="shrink-0 text-[11px] font-semibold text-white/30 hover:text-red-400/70 transition-colors"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+                        ) : null}
+                        <p className="mt-3 text-[10px] text-white/20">
+                          Fetches repo metadata, latest release and README. Fields you edit by hand are preserved on re-sync.
+                        </p>
+                      </div>
+                    </div>
                     <div>
                       <label className={labelCls}>Version</label>
                       <input type="text" value={currentProduct.version || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, version: e.target.value })} className={inputCls} placeholder="v1.0.0" />
@@ -296,8 +520,8 @@ export default function AdminProducts() {
                       </div>
                       <textarea
                         rows={8}
-                        value={currentProduct.longDescription || currentProduct.description || ""}
-                        onChange={(e) => setCurrentProduct({ ...currentProduct, longDescription: e.target.value, description: e.target.value.slice(0, 300) })}
+                        value={currentProduct.longDescription || ""}
+                        onChange={(e) => setCurrentProduct({ ...currentProduct, longDescription: e.target.value })}
                         className={inputCls + " resize-y font-mono text-[13px]"}
                         placeholder={
                           (currentProduct.descriptionType ?? "plain") === "markdown"
@@ -312,6 +536,16 @@ export default function AdminProducts() {
                         {(currentProduct.descriptionType ?? "plain") === "html" && "Paste raw HTML — rendered as-is on the product page."}
                         {(currentProduct.descriptionType ?? "plain") === "plain" && "Rendered as paragraphs. Emoji at line start becomes a visual section header."}
                       </p>
+                      <div className="mt-4">
+                        <label className={labelCls}>Summary (shown on cards)</label>
+                        <textarea
+                          rows={3}
+                          value={currentProduct.description || ""}
+                          onChange={(e) => setCurrentProduct({ ...currentProduct, description: e.target.value })}
+                          className={inputCls + " resize-none"}
+                          placeholder="Short summary displayed on the product card and used in search."
+                        />
+                      </div>
                     </div>
                     <div className="col-span-2">
                       <label className={labelCls}>Features (one per line)</label>

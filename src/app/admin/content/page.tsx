@@ -40,10 +40,12 @@ export default function AdminContent() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    getHomepageContent().then((data) => {
-      setContent(data);
-      setIsLoading(false);
-    });
+    getHomepageContent()
+      .then((data) => {
+        setContent(data);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   const handleSave = async () => {

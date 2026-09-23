@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { gatewayMinorMultiplier } from "@/lib/currency";
+import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 
 export async function GET(req: Request) {
   if (!process.env.STRIPE_SECRET_KEY) {
@@ -18,12 +20,37 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
     }
 
+    const metadata = (session.metadata ?? {}) as Record<string, string>;
+    const productId = metadata.productId ?? "";
+    if (!productId) {
+      return NextResponse.json({ error: "Session has no associated product" }, { status: 400 });
+    }
+
+    const currency = (session.currency ?? "usd").toUpperCase();
+    const amount = (session.amount_total ?? 0) / gatewayMinorMultiplier(currency);
+
+    const result = await fulfillVerifiedOrder({
+      gateway: "stripe",
+      orderId: sessionId,
+      paymentId: (session.payment_intent as string) ?? `pi_${sessionId}`,
+      productId,
+      customerInfo: {
+        name: metadata.customerName,
+        email: session.customer_email ?? metadata.customerEmail,
+        contact: metadata.customerContact,
+      },
+      amount,
+      currency,
+    });
+
     return NextResponse.json({
-      paymentId: session.payment_intent as string,
-      amount: (session.amount_total ?? 0) / 100,
-      currency: (session.currency ?? "usd").toUpperCase(),
-      metadata: session.metadata,
-      customerEmail: session.customer_email,
+      paymentId: (session.payment_intent as string) ?? `pi_${sessionId}`,
+      amount,
+      currency,
+      metadata,
+      customerEmail: session.customer_email ?? null,
+      orderId: result.orderId,
+      licenseKey: result.licenseKey,
     });
   } catch (error) {
     console.error("Stripe verify error:", error);

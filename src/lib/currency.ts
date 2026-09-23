@@ -71,6 +71,21 @@ export function formatPrice(amount: number, currency: CurrencyInfo): string {
   return `${currency.symbol}${rounded.toLocaleString()}`;
 }
 
+// Pick the quote decimals for a currency code (falls back to 2).
+export function currencyDecimals(code: string): number {
+  return CURRENCIES[code]?.decimals ?? 2;
+}
+
+// Currencies Stripe/Razorpay price in whole units (no minor units).
+// Note: this is the gateway subunit convention, NOT the display decimals in
+// CURRENCIES (e.g. INR is shown with 0 decimals but is a 100-subunit currency).
+const GATEWAY_ZERO_DECIMAL = new Set(["JPY", "KRW", "VND"]);
+
+// How many units of the currency's smallest subunit equal one major unit.
+export function gatewayMinorMultiplier(code: string): number {
+  return GATEWAY_ZERO_DECIMAL.has(code) ? 1 : 100;
+}
+
 interface RateCache {
   rates: Record<string, number>;
   timestamp: number;
@@ -111,17 +126,17 @@ function setGeoCache(ip: string, countryCode: string, currencyCode: string) {
 }
 
 // Detect currency from IP geolocation, with timezone fallback.
-// Stores the detected IP — if IP changes (e.g. VPN), re-fetches instead of using stale cache.
+// Reuses a cached geo lookup (session-scoped) to avoid an external call on every mount.
 export async function detectCurrency(): Promise<string> {
-  // Try IP geolocation — always fetch current IP to detect VPN changes
+  const cached = getGeoCache();
+  if (cached?.currencyCode) return cached.currencyCode;
+
+  // Try IP geolocation
   try {
     const res = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`ipapi.co responded ${res.status}`);
     const data = await res.json();
     const ip: string = data.ip || "";
-    const geo = getGeoCache();
-    // Return cached currency if same IP (avoids unnecessary work mid-session)
-    if (geo && ip && geo.ip === ip) return geo.currencyCode;
-
     const countryCode: string = data.country_code || "US";
     const currencyCode: string = data.currency || COUNTRY_CURRENCY[countryCode] || "USD";
     const resolved = CURRENCIES[currencyCode] ? currencyCode : "USD";
@@ -130,9 +145,6 @@ export async function detectCurrency(): Promise<string> {
   } catch {}
 
   // Timezone fallback (when ipapi.co is unreachable)
-  const cached = getGeoCache();
-  if (cached) return cached.currencyCode;
-
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz.includes("Kolkata") || tz.includes("Calcutta")) return "INR";
@@ -145,7 +157,11 @@ export async function detectCurrency(): Promise<string> {
     if (tz.includes("Sydney") || tz.includes("Melbourne")) return "AUD";
     if (tz.includes("Toronto") || tz.includes("Vancouver")) return "CAD";
     if (tz.includes("Sao_Paulo")) return "BRL";
-    if (tz.startsWith("Europe/")) return "EUR";
+    if (tz.includes("Madrid") || tz.includes("Paris") || tz.includes("Berlin")
+      || tz.includes("Rome") || tz.includes("Amsterdam") || tz.includes("Brussels")
+      || tz.includes("Vienna") || tz.includes("Lisbon") || tz.includes("Dublin")
+      || tz.includes("Stockholm") || tz.includes("Oslo") || tz.includes("Copenhagen")
+      || tz.includes("Helsinki")) return "EUR";
   } catch {}
 
   return "USD";

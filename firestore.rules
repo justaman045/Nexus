@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// NOTE: money/fulfillment writes (orders, licenses, products.purchases) happen
+// server-side with the Admin SDK, which bypasses these rules. Keep in sync with
+// NEXT_PUBLIC_ADMIN_EMAILS (.env.example / Vercel).
+const ADMIN_EMAILS = ['developerlife69@gmail.com'];
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email in ADMIN_EMAILS
+        && request.auth.token.email_verified == true;
+    }
+
+    // Public catalog + settings (read-only for everyone)
+    match /products/{productId} {
+      allow read: if true;
+      // Purchases count is maintained server-side on verified payment.
+      allow write: if isAdmin();
+    }
+
+    match /content/{document} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{document} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Append-only contact form spam-safe: any signed request may create.
+    match /contacts/{documentId} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
+    // Financial records are written exclusively via the Admin SDK (server).
+    // Reads are public today because there is no per-user auth model; revisit
+    // when Firebase Auth read-privacy lands.
+    match /orders/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /licenses/{documentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

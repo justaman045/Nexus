@@ -18,6 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { getOrders, Order } from "@/lib/orders";
 import { getProducts, Product } from "@/lib/products";
+import { fetchRates } from "@/lib/currency";
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
 
@@ -40,12 +41,27 @@ function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
 }
 
+function toUSD(amount: number, currency: string, rates: Record<string, number>): number {
+  if (!currency || currency === "USD") return amount;
+  const rate = rates[currency];
+  return rate ? amount / rate : amount;
+}
+
 function formatTime(ts: unknown) {
   if (!ts) return "";
   try {
     const date = (ts as { toDate: () => Date }).toDate ? (ts as { toDate: () => Date }).toDate() : new Date(ts as string);
     return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   } catch { return ""; }
+}
+
+function formatTimeMs(ts: unknown): number {
+  if (!ts) return 0;
+  try {
+    return typeof (ts as { toDate?: () => Date }).toDate === "function"
+      ? (ts as { toDate: () => Date }).toDate().getTime()
+      : new Date(ts as string).getTime();
+  } catch { return 0; }
 }
 
 function timeAgo(date: Date): string {
@@ -64,7 +80,7 @@ function timeAgo(date: Date): string {
 function AnimatedNumber({ value, suffix = "" }: { value: number; suffix?: string }) {
   const [display, setDisplay] = useState(0);
   useEffect(() => {
-    let start = 0;
+    const start = 0;
     const end = value;
     const duration = 800;
     const startTime = performance.now();
@@ -130,19 +146,28 @@ export default function AdminDashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [rates, setRates] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    Promise.all([getOrders(), getProducts()]).then(([o, p]) => {
-      setOrders(o);
-      setProducts(p);
-      setLoading(false);
-    });
+    Promise.all([getOrders(), getProducts(), fetchRates()])
+      .then(([o, p, r]) => {
+        setOrders(o);
+        setProducts(p);
+        setRates(r);
+        setLastRefreshed(new Date());
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const paidOrders = useMemo(() => orders.filter((o) => o.status === "paid"), [orders]);
-  const totalRevenue = useMemo(() => paidOrders.reduce((sum, o) => sum + o.amount, 0), [paidOrders]);
+  const totalRevenue = useMemo(() => paidOrders.reduce((sum, o) => sum + toUSD(o.amount, o.currency, rates), 0), [paidOrders, rates]);
   const convRate = orders.length ? Math.round((paidOrders.length / orders.length) * 100) : 0;
-  const recentOrders = useMemo(() => orders.slice(0, 5), [orders]);
+  const recentOrders = useMemo(
+    () => [...orders].sort((a, b) => formatTimeMs(b.createdAt) - formatTimeMs(a.createdAt)).slice(0, 5),
+    [orders]
+  );
 
   const productSales = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -170,11 +195,11 @@ export default function AdminDashboard() {
             : new Date(o.createdAt as unknown as string).getTime();
           return t >= dayStart && t < dayEnd;
         })
-        .reduce((s, o) => s + o.amount, 0);
+        .reduce((s, o) => s + toUSD(o.amount, o.currency, rates), 0);
       days.push({ label: key, value: total });
     }
     return days;
-  }, [paidOrders]);
+  }, [paidOrders, rates]);
 
   const stats = useMemo(() => [
     { label: "Total Orders", value: orders.length, icon: ShoppingBag, change: `${convRate}% paid`, color: 0 },
@@ -196,12 +221,12 @@ export default function AdminDashboard() {
     }
     if (products.length > 0) {
       const latest = [...products].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
-      items.push({ type: "product", title: `${latest.name} added`, time: new Date(latest.createdAt || Date.now()), id: latest.id });
+      items.push({ type: "product", title: `${latest.name} added`, time: new Date(latest.createdAt || 0), id: latest.id });
     }
     return items.sort((a, b) => b.time.getTime() - a.time.getTime()).slice(0, 6);
   }, [orders, products]);
 
-  const lastUpdated = useMemo(() => timeAgo(new Date()), []);
+  const lastUpdated = useMemo(() => (lastRefreshed ? timeAgo(lastRefreshed) : ""), [lastRefreshed]);
 
   if (loading) {
     return (
@@ -285,7 +310,7 @@ export default function AdminDashboard() {
               <div className="text-[36px] font-bold tracking-tight text-white leading-none mb-1.5 relative z-10 mt-4">
                 {stat.prefix || ""}
                 {stat.label === "Revenue" ? (
-                  <>${totalRevenue.toLocaleString()}</>
+                  <>{totalRevenue.toLocaleString()}</>
                 ) : (
                   <AnimatedNumber value={stat.value} />
                 )}
@@ -496,7 +521,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-[13px] font-bold" style={{ color: "rgba(255,255,255,0.8)" }}>
-                      {formatCurrency(order.amount)}
+                      {formatCurrency(toUSD(order.amount, order.currency, rates))}
                     </p>
                   </div>
                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border shrink-0 ml-1 ${
@@ -529,7 +554,7 @@ export default function AdminDashboard() {
             { title: "Manage Products", desc: "Add, edit or remove products", href: "/admin/products", icon: Package, color: "#818cf8", bg: "rgba(99,102,241,0.12)", hover: "rgba(99,102,241,0.08)" },
             { title: "Edit Content", desc: "Update homepage & CMS content", href: "/admin/content", icon: FileText, color: "#c084fc", bg: "rgba(168,85,247,0.12)", hover: "rgba(168,85,247,0.08)" },
             { title: "View Orders", desc: "See all transactions", href: "/admin/orders", icon: TrendUp, color: "#34d399", bg: "rgba(34,197,94,0.1)", hover: "rgba(34,197,94,0.07)" },
-          ].map((action, i) => (
+          ].map((action) => (
             <Link
               key={action.href}
               href={action.href}

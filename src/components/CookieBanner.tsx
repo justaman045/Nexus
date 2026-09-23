@@ -1,25 +1,40 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Cookie, X } from "@phosphor-icons/react";
 import Link from "next/link";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
+const CONSENT_KEY = "cookie_consent";
+
+function subscribe(onStoreChange: () => void): () => void {
+  window.addEventListener("storage", onStoreChange);
+  return () => window.removeEventListener("storage", onStoreChange);
+}
+
+function getConsent(): string {
+  try { return window.localStorage.getItem(CONSENT_KEY) ?? ""; } catch { return ""; }
+}
+
+// Server + hydration snapshot — stays consistent with what SSR rendered.
+function getServerConsent(): string {
+  return "";
+}
+
 export default function CookieBanner() {
   const siteSettings = useSiteSettings();
-  const [visible, setVisible] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const consent = useSyncExternalStore(subscribe, getConsent, getServerConsent);
+  const visible = !dismissed && consent === "";
 
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem("cookie_consent")) setVisible(true);
-    } catch { /* storage blocked */ }
-  }, []);
-
-  const dismiss = () => {
-    try { localStorage.setItem("cookie_consent", "accepted"); } catch { /* ignore */ }
-    setVisible(false);
+  const setConsent = (value: string) => {
+    try { window.localStorage.setItem(CONSENT_KEY, value); } catch { /* storage blocked */ }
+    setDismissed(true);
   };
+
+  const accept = () => setConsent("accepted");
+  const decline = () => setConsent("declined");
 
   return (
     <AnimatePresence>
@@ -42,15 +57,21 @@ export default function CookieBanner() {
               </Link>
             </p>
             <button
-              onClick={dismiss}
+              onClick={accept}
               className="btn-pro btn-pro-primary text-[12px] py-2 px-4 shrink-0"
             >
               {siteSettings.cookieBanner.acceptLabel}
             </button>
             <button
-              onClick={dismiss}
+              onClick={decline}
+              className="btn-pro btn-pro-secondary text-[12px] py-2 px-4 shrink-0"
+            >
+              Decline
+            </button>
+            <button
+              onClick={decline}
               className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors shrink-0"
-              aria-label="Dismiss"
+              aria-label="Decline"
             >
               <X size={14} weight="bold" />
             </button>

@@ -26,7 +26,7 @@ export const labelCls = "block text-[10px] font-bold text-white/30 uppercase tra
 
 export function LoadingSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: number }) {
   return (
-    <tbody>
+    <>
       {Array.from({ length: rows }).map((_, r) => (
         <tr key={r} className="border-b border-white/[0.03]">
           {Array.from({ length: cols }).map((_, c) => (
@@ -39,7 +39,7 @@ export function LoadingSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: 
           ))}
         </tr>
       ))}
-    </tbody>
+    </>
   );
 }
 

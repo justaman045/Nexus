@@ -36,7 +36,7 @@ const bentoVisuals = [
   { icon: Cpu, orb: "rgba(168,85,247,0.15)", iconBg: "rgba(168,85,247,0.2)", iconBorder: "rgba(168,85,247,0.3)", iconColor: "#c084fc" },
 ];
 
-function FAQItem({ q, a, dark }: { q: string; a: string; dark: boolean }) {
+function FAQItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="border-b border-border last:border-0">
@@ -63,11 +63,8 @@ export default function Home() {
   const [content, setContent] = useState<HomepageContent>(defaultContent);
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [mounted, setMounted] = useState(false);
   const { resolvedTheme } = useTheme();
-  const { format: formatCurrency, currency } = useCurrency();
-
-  useEffect(() => { setMounted(true); }, []);
+  const { format: formatCurrency } = useCurrency();
 
   useEffect(() => {
     Promise.all([getHomepageContent(), getProducts()]).then(([c, p]) => {
@@ -77,7 +74,7 @@ export default function Home() {
     });
   }, []);
 
-  const dark = !mounted ? true : resolvedTheme === "dark";
+  const dark = resolvedTheme !== "light";
 
   /* ── Theme-aware design tokens ── */
   const glass = {
@@ -492,7 +489,7 @@ export default function Home() {
               <h2 className="text-display gradient-text">{siteSettings.sectionHeadings.faq.subheading}</h2>
             </motion.div>
             <motion.div {...iv()} className="rounded-2xl p-8" style={glass}>
-              {faq.map((item, i) => <FAQItem key={i} q={item.q} a={item.a} dark={dark} />)}
+              {faq.map((item, i) => <FAQItem key={i} q={item.q} a={item.a} />)}
             </motion.div>
           </div>
         </section>

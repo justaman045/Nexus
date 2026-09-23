@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export interface HeroSection {
     badge: string;
@@ -135,18 +135,35 @@ export async function getHomepageContent(): Promise<HomepageContent> {
         const docRef = doc(db, "content", HOMEPAGE_DOC_ID);
         const docSnap = await getDoc(docRef);
 
-        if (docSnap.exists()) {
-            cachedContent = docSnap.data() as HomepageContent;
-            lastContentFetch = Date.now();
-            return cachedContent;
-        } else {
-            // Return default if not found (or seed it)
-            return defaultContent;
-        }
+        // Deep-merge stored data over defaults so partial docs don't yield undefined sub-fields
+        const merged = docSnap.exists()
+            ? deepMergeStructure(defaultContent, docSnap.data() as Partial<HomepageContent>)
+            : defaultContent;
+        cachedContent = merged;
+        lastContentFetch = Date.now();
+        return merged;
     } catch (error) {
         console.error("Error fetching homepage content:", error);
+        cachedContent = defaultContent;
+        lastContentFetch = Date.now();
         return defaultContent;
     }
+}
+
+// Merges arrays/objects by key while favoring `partial` for primitive values.
+function deepMergeStructure<T>(base: T, partial: unknown): T {
+    if (partial === undefined || partial === null) return base;
+    if (Array.isArray(base) || typeof base !== "object") return partial as T;
+    if (Array.isArray(partial)) return partial as T;
+
+    const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+    for (const key of Object.keys(partial as Record<string, unknown>)) {
+        out[key] = deepMergeStructure(
+            (base as Record<string, unknown>)[key],
+            (partial as Record<string, unknown>)[key]
+        );
+    }
+    return out as T;
 }
 
 export async function updateHomepageContent(data: Partial<HomepageContent>) {

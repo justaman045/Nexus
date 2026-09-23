@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,9 +15,9 @@ import {
   Copy,
   Check,
 } from "@phosphor-icons/react";
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, increment } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { generateLicense } from "@/lib/licenses";
+import { currencyDecimals } from "@/lib/currency";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 interface Order {
@@ -27,7 +27,7 @@ interface Order {
   amount: number;
   currency: string;
   status: string;
-  createdAt: string;
+  createdAt: string | { toDate: () => Date } | number;
   orderId: string;
   paymentId?: string;
   gateway?: string;
@@ -36,6 +36,16 @@ interface Order {
     email: string;
     contact: string;
   };
+}
+
+function asDate(value: Order["createdAt"]): Date {
+  if (!value) return new Date(0);
+  if (typeof value === "object") {
+    const d = value.toDate?.();
+    if (d && !Number.isNaN(d.getTime())) return d;
+  }
+  const d = new Date(value as string | number);
+  return Number.isNaN(d.getTime()) ? new Date(0) : d;
 }
 
 interface StripeSuccessData {
@@ -59,8 +69,11 @@ function OrderHistoryContent() {
   const [stripeSuccess, setStripeSuccess] = useState<StripeSuccessData | null>(null);
   const [stripeError, setStripeError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const verifyInFlight = useRef(false);
 
   const handleStripeReturn = useCallback(async (sessionId: string) => {
+    if (verifyInFlight.current) return;
+    verifyInFlight.current = true;
     setStripeProcessing(true);
     setStripeError(null);
     try {
@@ -70,50 +83,21 @@ function OrderHistoryContent() {
 
       // Get pending order info from sessionStorage
       const pending = JSON.parse(sessionStorage.getItem("stripe_pending") || "null");
-      const productId = data.metadata?.productId || pending?.productId || "";
       const productName = data.metadata?.productName || pending?.productName || "Unknown Product";
-      const customerName = data.metadata?.customerName || pending?.customerInfo?.name || "";
       const customerEmail = data.customerEmail || data.metadata?.customerEmail || pending?.customerInfo?.email || "";
-      const customerContact = data.metadata?.customerContact || pending?.customerInfo?.contact || "";
-      const amount = pending?.amount ?? data.amount;
-      const currency = pending?.currency ?? data.currency;
 
-      // Check if order already saved (idempotency)
-      const existing = await getDocs(query(collection(db, "orders"), where("orderId", "==", sessionId)));
-      let licenseKey: string;
-      if (!existing.empty) {
-        // Order already exists — fetch its license
-        const existingLic = await getDocs(query(collection(db, "licenses"), where("orderId", "==", sessionId)));
-        licenseKey = existingLic.empty ? "Check your dashboard" : existingLic.docs[0].data().licenseKey;
-      } else {
-        // Save new order
-        await addDoc(collection(db, "orders"), {
-          orderId: sessionId,
-          paymentId: data.paymentId,
-          productId,
-          productName,
-          customerInfo: { name: customerName, email: customerEmail, contact: customerContact },
-          amount,
-          currency,
-          gateway: "stripe",
-          status: "paid",
-          createdAt: new Date().toISOString(),
-        });
-        if (productId) {
-          await updateDoc(doc(db, "products", productId), { purchases: increment(1) }).catch(() => {});
-        }
-        const result = await generateLicense({ productId, productName, customerEmail, orderId: sessionId });
-        licenseKey = result.licenseKey;
-      }
+      // Order + license are persisted server-side by the verify route.
+      const licenseKey = data.licenseKey;
 
       sessionStorage.removeItem("stripe_pending");
       setStripeSuccess({ licenseKey, productName, email: customerEmail });
       // Remove query param from URL
       router.replace("/orders", { scroll: false });
-    } catch (err: any) {
-      setStripeError(err.message || "Failed to process payment. Contact support.");
+    } catch (err) {
+      setStripeError(err instanceof Error ? err.message : "Failed to process payment. Contact support.");
     } finally {
       setStripeProcessing(false);
+      verifyInFlight.current = false;
     }
   }, [router]);
 
@@ -132,7 +116,7 @@ function OrderHistoryContent() {
       const q = query(collection(db, "orders"), where("customerInfo.email", "==", email.trim()));
       const snap = await getDocs(q);
       const found = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
-      found.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      found.sort((a, b) => asDate(b.createdAt).getTime() - asDate(a.createdAt).getTime());
       setOrders(found);
     } catch (e) {
       console.error(e);
@@ -149,8 +133,15 @@ function OrderHistoryContent() {
     });
   };
 
-  const formatAmount = (amount: number, currency: string) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(amount);
+  const formatAmount = (amount: number, currency: string) => {
+    const decimals = currencyDecimals(currency);
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(amount);
+  };
 
   return (
     <div className="min-h-[100dvh] bg-background overflow-x-hidden">
@@ -264,7 +255,7 @@ function OrderHistoryContent() {
                     <div className="flex items-center gap-3 mt-1">
                       <span className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
                         <CalendarBlank size={11} />
-                        {new Date(order.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {asDate(order.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                         order.status === "paid"
@@ -402,7 +393,7 @@ function OrderHistoryContent() {
                       { label: "Product", value: selectedOrder.productName },
                       { label: "Status", value: selectedOrder.status.toUpperCase() },
                       { label: "Gateway", value: selectedOrder.gateway?.toUpperCase() || "—" },
-                      { label: "Date", value: new Date(selectedOrder.createdAt).toLocaleString() },
+                      { label: "Date", value: asDate(selectedOrder.createdAt).toLocaleString() },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex justify-between items-center">
                         <span className="text-muted-foreground text-[13px]">{label}</span>

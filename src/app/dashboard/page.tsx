@@ -5,7 +5,7 @@ import { auth, googleProvider } from "@/lib/firebase";
 import { signInWithPopup, onAuthStateChanged, signOut, User } from "firebase/auth";
 import { motion } from "framer-motion";
 import {
-  Download, BookOpen, SignOut, CircleNotch, Package, ArrowSquareOut,
+  Download, BookOpen, SignOut, Package, ArrowSquareOut,
   Copy, Check, GoogleLogo, Vault, ArrowRight, Envelope, Receipt, Play,
   Clock, Key, Cube, Tag,
 } from "@phosphor-icons/react";
@@ -74,10 +74,12 @@ export default function CustomerDashboard() {
       if (u?.email) await fetchUserLicenses(u.email);
       setLoading(false);
     });
-    getHomepageContent().then((c) => {
-      const email = c?.contact?.emails?.[0];
-      if (email) setSupportEmail(email);
-    });
+    getHomepageContent()
+      .then((c) => {
+        const email = c?.contact?.emails?.[0];
+        if (email) setSupportEmail(email);
+      })
+      .catch(() => {});
     return () => unsubscribe();
   }, []);
 
@@ -89,6 +91,8 @@ export default function CustomerDashboard() {
         userLicenses.map(async (l) => ({ ...l, product: await getProductById(l.productId) }))
       );
       setLicenses(withProducts);
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsFetchingLicenses(false);
     }
@@ -104,6 +108,26 @@ export default function CustomerDashboard() {
     navigator.clipboard.writeText(key);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const downloadLicense = (license: LicenseWithProduct) => {
+    const slug = (license.product?.name ?? license.productName)
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "license";
+    const contents = [
+      "NEXUS SOFTWARE LICENSE",
+      "----------------------",
+      `Product: ${license.productName}`,
+      `License Key: ${license.licenseKey}`,
+      `Order: ${license.orderId}`,
+      `Issued: ${formatDate(license.createdAt)}`,
+    ].join("\n");
+    const blob = new Blob([contents], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug}.lic`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const uniqueProductCount = useMemo(
@@ -224,7 +248,7 @@ export default function CustomerDashboard() {
               { label: "Products", value: uniqueProductCount, icon: Cube },
               { label: "Member since", value: oldestDate(licenses), icon: Clock },
               { label: "Latest", value: timeAgo(licenses[0]?.createdAt), icon: Tag },
-            ].map((stat, i) => (
+            ].map((stat) => (
               <div
                 key={stat.label}
                 className="rounded-2xl bg-foreground/[0.03] dark:bg-white/[0.04] border border-border p-4 flex items-center gap-3"
@@ -234,7 +258,7 @@ export default function CustomerDashboard() {
                 </div>
                 <div>
                   <p className="text-[22px] font-bold tracking-tight leading-none gradient-text">
-                    {typeof stat.value === "number" ? stat.value : stat.value}
+                    {stat.value}
                   </p>
                   <p className="text-[10px] font-bold tracking-[0.12em] uppercase text-muted-foreground mt-0.5">
                     {stat.label}
@@ -385,6 +409,13 @@ export default function CustomerDashboard() {
                         {copiedKey === license.licenseKey
                           ? <Check size={16} weight="bold" className="text-emerald-500" />
                           : <Copy size={16} weight="bold" />}
+                      </button>
+                      <button
+                        onClick={() => downloadLicense(license)}
+                        title="Download .lic"
+                        className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      >
+                        <Download size={16} weight="bold" />
                       </button>
                     </div>
                   </div>

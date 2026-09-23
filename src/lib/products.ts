@@ -1,5 +1,6 @@
 import { db } from "./firebase";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, addDoc, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, addDoc } from "firebase/firestore";
+import type { GitHubSnapshot } from "./github";
 
 export interface Product {
     id: string;
@@ -15,7 +16,8 @@ export interface Product {
     documentationUrl?: string; // New
     longDescription?: string;
     descriptionType?: "plain" | "markdown" | "html";
-    order?: number;
+    repoUrl?: string; // Synced GitHub repo URL
+    github?: GitHubSnapshot; // Latest synced repo metadata
     purchases: number; // New for sorting
     createdAt: string; // New for sorting
 }
@@ -102,16 +104,19 @@ export async function getProducts(): Promise<Product[]> {
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
-    if (cachedProducts && Date.now() - lastProductsFetch < CACHE_TTL) {
-        const cached = cachedProducts.find(p => p.id === id);
-        if (cached) return cached;
-    }
-
     try {
         const docRef = doc(db, "products", id);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-            return { id: docSnap.id, ...docSnap.data() } as Product;
+            const product = { id: docSnap.id, ...docSnap.data() } as Product;
+            // Refresh the shared cache so a subsequent getProducts() isn't stale
+            if (cachedProducts) {
+                const idx = cachedProducts.findIndex((p) => p.id === id);
+                if (idx !== -1) cachedProducts[idx] = product;
+                else cachedProducts.push(product);
+                lastProductsFetch = Date.now();
+            }
+            return product;
         }
         return MOCK_PRODUCTS.find((p) => p.id === id) || null;
     } catch (error) {
@@ -147,4 +152,6 @@ export async function seedProducts() {
         // Use setDoc with specific ID to avoid duplicates on re-seed if IDs match
         await setDoc(doc(db, "products", product.id), product);
     }
+    cachedProducts = null;
+    lastProductsFetch = 0;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { isAdminEmail } from "@/lib/admin";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -12,6 +13,7 @@ import {
   FileText,
   ShoppingBag,
   Gear,
+  Globe,
   Rocket,
   SignOut,
 } from "@phosphor-icons/react";
@@ -21,6 +23,7 @@ const navItems = [
   { name: "Products", href: "/admin/products", icon: Package },
   { name: "Content", href: "/admin/content", icon: FileText },
   { name: "Orders", href: "/admin/orders", icon: ShoppingBag },
+  { name: "Site", href: "/admin/site", icon: Globe },
   { name: "Settings", href: "/admin/settings", icon: Gear },
 ];
 
@@ -39,9 +42,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) {
+      if (user && isAdminEmail(user.email)) {
         setAuthenticated(true);
       } else {
+        if (user) signOut(auth).catch(() => {});
+        setAuthenticated(false);
         if (pathname !== "/admin/login") router.push("/admin/login");
       }
       setLoading(false);

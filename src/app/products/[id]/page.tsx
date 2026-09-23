@@ -17,12 +17,12 @@ import {
     Check,
     Copy,
     Terminal,
+    GithubLogo,
+    Star,
 } from "@phosphor-icons/react";
 import { getProductById, Product } from "@/lib/products";
-import { generateLicense } from "@/lib/licenses";
-import { addDoc, collection, doc, updateDoc, increment } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
+import { CURRENCIES, formatPrice } from "@/lib/currency";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -115,11 +115,16 @@ const markdownComponents: Components = {
                 </code>
             );
         }
-        return null;
+        return (
+            <code className={className} {...props}>
+                {children}
+            </code>
+        );
     },
     pre: ({ children }) => {
-        const codeEl = children as React.ReactElement<{ className?: string; children?: React.ReactNode }>;
-        return <CodeBlock className={codeEl?.props?.className} children={codeEl?.props?.children} />;
+        const codeEl = children as React.ReactElement<{ className?: string; children?: React.ReactNode }> | null;
+        const { className: codeClassName, children: codeChildren } = codeEl?.props ?? {};
+        return <CodeBlock className={codeClassName}>{codeChildren}</CodeBlock>;
     },
     hr: () => <hr className="border-border/60 my-8" />,
     blockquote: ({ children }) => (
@@ -222,9 +227,38 @@ function ProductDescription({ content, type }: { content: string; type: "plain" 
     );
 }
 
+interface RazorpayResponse {
+    razorpay_payment_id: string;
+    razorpay_signature?: string;
+}
+
+interface RazorpayOptions {
+    key?: string;
+    amount?: number;
+    currency?: string;
+    name?: string;
+    description?: string;
+    order_id?: string;
+    handler?: (response: RazorpayResponse) => void;
+    prefill?: { name?: string; email?: string; contact?: string };
+    theme?: { color?: string };
+}
+
+interface RazorpayInstance {
+    open(): void;
+    on(event: "payment.failed" | "modal.close", callback: () => void): void;
+}
+
+type RazorpayConstructor = new (options: RazorpayOptions) => RazorpayInstance;
+
+function getRazorpay(): RazorpayConstructor | null {
+    if (typeof window === "undefined") return null;
+    return (window as unknown as { Razorpay?: RazorpayConstructor }).Razorpay ?? null;
+}
+
 function loadRazorpayScript(): Promise<boolean> {
     return new Promise((resolve) => {
-        if (typeof (window as any).Razorpay !== "undefined") { resolve(true); return; }
+        if (getRazorpay()) { resolve(true); return; }
         const script = document.createElement("script");
         script.src = "https://checkout.razorpay.com/v1/checkout.js";
         script.onload = () => resolve(true);
@@ -233,17 +267,71 @@ function loadRazorpayScript(): Promise<boolean> {
     });
 }
 
+function timeAgo(input: string): string {
+    const diff = Date.now() - new Date(input).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return `${months}mo ago`;
+    return `${Math.floor(months / 12)}y ago`;
+}
+
+function GitHubStatsBar({ github }: { github: NonNullable<Product["github"]> }) {
+    return (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-muted-foreground">
+            <a
+                href={github.htmlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 font-semibold text-foreground/90 hover:text-accent transition-colors"
+            >
+                <GithubLogo size={13} weight="fill" />
+                {github.owner}/{github.repo}
+            </a>
+            {github.stars > 0 && (
+                <span className="inline-flex items-center gap-1">
+                    <Star size={12} weight="fill" className="text-amber-500" />
+                    {github.stars.toLocaleString()}
+                </span>
+            )}
+            {github.language && (
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-violet-500/80" />
+                    {github.language}
+                </span>
+            )}
+            {github.license && (
+                <span className="px-2 py-0.5 rounded-full border border-border text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {github.license}
+                </span>
+            )}
+            {github.archived && (
+                <span className="px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/[0.06] text-[10px] font-bold uppercase tracking-wider text-amber-500/90">
+                    Archived
+                </span>
+            )}
+            <span>Updated {timeAgo(github.pushedAt)}</span>
+        </div>
+    );
+}
+
 export default function ProductDetailsPage() {
     const { id } = useParams();
     const [product, setProduct] = useState<Product | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [checkoutError, setCheckoutError] = useState<string | null>(null);
     const [userDetails, setUserDetails] = useState({ name: "", email: "", contact: "" });
 
     const siteSettings = useSiteSettings();
     const [gateway, setGateway] = useState<PaymentGateway>("razorpay");
-    const { currency, rate: exchangeRate, format: formatCurrency, convert } = useCurrency();
+    const { currency, format: formatCurrency, convert, convertTo } = useCurrency();
 
     useEffect(() => {
         if (!id) return;
@@ -258,68 +346,92 @@ export default function ProductDetailsPage() {
     }, [id]);
 
     const processRazorpay = async () => {
-        const loaded = await loadRazorpayScript();
-        if (!loaded) { alert("Failed to load payment gateway."); return; }
+        let RazorpayCtor = getRazorpay();
+        if (!RazorpayCtor) {
+            const loaded = await loadRazorpayScript();
+            if (!loaded) { setCheckoutError("Failed to load payment gateway. Please try again."); return; }
+            RazorpayCtor = getRazorpay();
+        }
+        if (!RazorpayCtor) { setCheckoutError("Failed to load payment gateway. Please try again."); return; }
+
+        // Razorpay only accepts INR — convert the USD price directly.
+        const chargeAmount = convertTo("INR", product!.price);
 
         const res = await fetch("/api/razorpay", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                amount: convert(product!.price),
-                currency: currency.code,
+                amount: chargeAmount,
+                currency: "INR",
+                productId: product!.id,
             }),
         });
-        const order = await res.json();
+        const order = await res.json().catch(() => null);
+        if (!res.ok || !order?.id) {
+            setCheckoutError(order?.error || "Failed to initiate payment. Please try again.");
+            return;
+        }
 
-        const options = {
+        const options: RazorpayOptions = {
             key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
             amount: order.amount,
             currency: order.currency,
             name: siteSettings.productDetail.merchantName,
             description: `License for ${product!.name}`,
             order_id: order.id,
-            handler: async function (response: any) {
+            handler: async (response) => {
                 try {
-                    await addDoc(collection(db, "orders"), {
-                        orderId: order.id,
-                        paymentId: response.razorpay_payment_id,
-                        productId: product!.id,
-                        productName: product!.name,
-                        customerInfo: userDetails,
-                        amount: product!.price,
-                        currency: currency.code,
-                        gateway: "razorpay",
-                        status: "paid",
-                        createdAt: new Date().toISOString(),
+                    const verifyRes = await fetch("/api/razorpay/verify", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            orderId: order.id,
+                            paymentId: response.razorpay_payment_id,
+                            signature: response.razorpay_signature,
+                            customerInfo: {
+                                name: userDetails.name,
+                                email: userDetails.email,
+                                contact: userDetails.contact,
+                            },
+                        }),
                     });
-                    await updateDoc(doc(db, "products", product!.id), { purchases: increment(1) });
-                    const { licenseKey } = await generateLicense({
-                        productId: product!.id,
-                        productName: product!.name,
-                        customerEmail: userDetails.email,
-                        orderId: order.id,
-                    });
-                    alert(`Payment Successful!\n\nYour License Key: ${licenseKey}\n\nFind it anytime in your dashboard.`);
+                    const verifyData = await verifyRes.json().catch(() => null);
+                    if (!verifyRes.ok || !verifyData?.verified) {
+                        setCheckoutError("Payment could not be verified. Please contact support.");
+                        setShowPaymentModal(false);
+                        setIsProcessing(false);
+                        return;
+                    }
+                    setIsProcessing(false);
                     setShowPaymentModal(false);
                     setUserDetails({ name: "", email: "", contact: "" });
+                    alert(`Payment Successful!\n\nYour License Key: ${verifyData.licenseKey}\n\nFind it anytime in your dashboard.`);
                 } catch {
-                    alert("Payment succeeded but order save failed. Contact support.");
+                    setCheckoutError("Payment succeeded but order save failed. Contact support.");
                 }
             },
             prefill: { name: userDetails.name, email: userDetails.email, contact: userDetails.contact },
             theme: { color: "#000000" },
         };
 
-        const paymentObject = new (window as any).Razorpay(options);
+        const paymentObject = new RazorpayCtor(options);
+        paymentObject.on("payment.failed", () => {
+            setCheckoutError("Payment failed. Please try again.");
+            setIsProcessing(false);
+        });
+        paymentObject.on("modal.close", () => {
+            setIsProcessing(false);
+        });
         paymentObject.open();
     };
 
     const processStripe = async () => {
+        const chargeAmount = convert(product!.price);
         const res = await fetch("/api/stripe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                amount: convert(product!.price),
+                amount: chargeAmount,
                 currency: currency.code,
                 productId: product!.id,
                 productName: product!.name,
@@ -328,15 +440,15 @@ export default function ProductDetailsPage() {
                 customerContact: userDetails.contact,
             }),
         });
-        const data = await res.json();
-        if (!res.ok || !data.url) {
-            alert(data.error || "Failed to initiate Stripe checkout.");
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.url || !data?.sessionId) {
+            setCheckoutError(data?.error || "Failed to initiate Stripe checkout.");
             return;
         }
         sessionStorage.setItem("stripe_pending", JSON.stringify({
             productId: product!.id,
             productName: product!.name,
-            amount: product!.price,
+            amount: chargeAmount,
             currency: currency.code,
             customerInfo: userDetails,
         }));
@@ -346,15 +458,16 @@ export default function ProductDetailsPage() {
     const handleCheckout = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsProcessing(true);
+        setCheckoutError(null);
         try {
             if (gateway === "stripe") {
                 await processStripe();
+                setIsProcessing(false);
             } else {
                 await processRazorpay();
             }
         } catch {
-            alert("Failed to initiate payment. Please try again.");
-        } finally {
+            setCheckoutError("Failed to initiate payment. Please try again.");
             setIsProcessing(false);
         }
     };
@@ -466,6 +579,12 @@ export default function ProductDetailsPage() {
                             )}
                         </div>
 
+                        {product.github && (
+                            <div className="py-4 border-y border-border/60 -my-1">
+                                <GitHubStatsBar github={product.github} />
+                            </div>
+                        )}
+
                         <div className="py-4 border-y border-border flex items-center justify-between">
                             <span className="text-[13px] font-semibold text-muted-foreground uppercase tracking-[0.1em]">License Price</span>
                             <span className="text-[28px] font-mono font-bold text-foreground tracking-tight">
@@ -475,7 +594,7 @@ export default function ProductDetailsPage() {
 
                         {product.features.length > 0 && (
                             <div className="space-y-3">
-                                <p className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted-foreground">What's included</p>
+                                <p className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted-foreground">What&apos;s included</p>
                                 <ul className="space-y-2">
                                     {product.features.map((feature, i) => (
                                         <li key={i} className="flex items-start gap-2.5 text-[14px] text-foreground/80">
@@ -502,6 +621,15 @@ export default function ProductDetailsPage() {
                                     className="w-full btn-apple btn-apple-secondary py-3.5 text-[14px] flex items-center justify-center gap-2"
                                 >
                                     <ArrowSquareOut size={15} weight="bold" /> {siteSettings.productDetail.livePreviewLabel}
+                                </Link>
+                            ) : product.repoUrl ? (
+                                <Link
+                                    href={product.repoUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full btn-apple btn-apple-secondary py-3.5 text-[14px] flex items-center justify-center gap-2"
+                                >
+                                    <GithubLogo size={15} weight="fill" /> View Source on GitHub
                                 </Link>
                             ) : (
                                 <button disabled className="w-full btn-apple bg-secondary/50 border border-border text-muted-foreground/40 cursor-not-allowed py-3.5 text-[14px]">
@@ -569,7 +697,22 @@ export default function ProductDetailsPage() {
 
                                 {gateway === "stripe" && (
                                     <div className="mb-4 px-3 py-2.5 rounded-xl bg-[#635BFF]/[0.07] border border-[#635BFF]/20 text-[12px] text-muted-foreground">
-                                        You'll be redirected to Stripe's secure checkout after filling this form.
+                                        You&apos;ll be redirected to Stripe&apos;s secure checkout after filling this form.
+                                    </div>
+                                )}
+
+                                {gateway === "razorpay" && (
+                                    <div className="mb-4 px-3 py-2.5 rounded-xl bg-[#0057FF]/[0.07] border border-[#0057FF]/20 text-[12px] text-muted-foreground">
+                                        This payment is processed in INR. You&apos;ll be charged{" "}
+                                        <span className="font-semibold text-foreground">
+                                            {formatPrice(convertTo("INR", product!.price), CURRENCIES.INR)}
+                                        </span>.
+                                    </div>
+                                )}
+
+                                {checkoutError && (
+                                    <div className="mb-4 px-3 py-2.5 rounded-xl bg-red-500/[0.07] border border-red-500/20 text-[12px] text-red-500/90">
+                                        {checkoutError}
                                     </div>
                                 )}
 

@@ -4,41 +4,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Globe, Check, Warning, CircleNotch } from "@phosphor-icons/react";
 import { getSiteSettings, updateSiteSettings, SiteSettings, defaultSiteSettings } from "@/lib/siteSettings";
-import { Glass, inputCls, labelCls, EASE } from "../_components/shared";
-
-type Section = {
-  key: string;
-  label: string;
-  collapsed?: boolean;
-};
-const SECTIONS: Section[] = [
-  { key: "brand", label: "Brand & Navigation", collapsed: false },
-  { key: "footer", label: "Footer" },
-  { key: "homepage", label: "Homepage Sections" },
-  { key: "products", label: "Products & Detail" },
-  { key: "dashboard", label: "Dashboard & Orders" },
-  { key: "about", label: "About Page" },
-  { key: "contact", label: "Contact Page" },
-  { key: "pages", label: "Legal & Utility Pages" },
-  { key: "cookies", label: "Cookie Banner" },
-];
-
-function SectionHeader({ label }: { label: string }) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-[13px] font-bold text-white/40 hover:text-white/70 transition-colors mb-4 w-full text-left"
-      >
-        <span className={`transition-transform ${open ? "rotate-90" : ""}`}>{">"}</span>
-        {label}
-      </button>
-      {open && <div className="space-y-4" />}
-    </div>
-  );
-}
+import { Glass, inputCls, labelCls } from "../_components/shared";
 
 function SaveButton({ onClick, saving }: { onClick: () => void; saving: boolean }) {
   return (
@@ -155,7 +121,10 @@ export default function AdminSite() {
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
 
   useEffect(() => {
-    getSiteSettings().then(s => { setSettings(s); setIsLoading(false); });
+    getSiteSettings()
+      .then(s => { setSettings(s); })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
 
   const handleSave = async () => {

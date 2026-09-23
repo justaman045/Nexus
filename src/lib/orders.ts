@@ -1,32 +1,23 @@
 
 import { db } from "./firebase";
-import { collection, addDoc, getDocs, query, orderBy, Timestamp } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, Timestamp } from "firebase/firestore";
 
 export interface Order {
     id?: string;
+    orderId?: string;
     productId: string;
     productName: string;
     amount: number;
     currency: string;
     status: "pending" | "paid" | "failed";
     paymentId?: string;
-    customerInfo: {
+    gateway?: string;
+    customerInfo?: {
         name?: string;
         email?: string;
         contact?: string;
     };
-    createdAt: Timestamp;
-}
-
-export async function addOrder(order: Omit<Order, "id">) {
-    try {
-        const docRef = await addDoc(collection(db, "orders"), order);
-        cachedOrders = null;
-        return docRef.id;
-    } catch (error) {
-        console.error("Error adding order:", error);
-        throw error;
-    }
+    createdAt: Timestamp | string;
 }
 
 let cachedOrders: Order[] | null = null;

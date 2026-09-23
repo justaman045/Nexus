@@ -372,16 +372,30 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   if (cachedSettings && Date.now() - cacheTime < CACHE_TTL) return cachedSettings;
   try {
     const snap = await getDoc(doc(db, "settings", SETTINGS_DOC_ID));
-    if (snap.exists()) {
-      cachedSettings = { ...defaultSiteSettings, ...snap.data() } as SiteSettings;
-    } else {
-      cachedSettings = defaultSiteSettings;
-    }
+    cachedSettings = snap.exists()
+      ? deepMerge(defaultSiteSettings, snap.data() as Partial<SiteSettings>)
+      : defaultSiteSettings;
   } catch {
     cachedSettings = defaultSiteSettings;
   }
   cacheTime = Date.now();
   return cachedSettings;
+}
+
+// Recursive merge: nested objects/arrays merge by key, primitives favor `partial`.
+function deepMerge<T>(base: T, partial: unknown): T {
+  if (partial === undefined || partial === null) return base;
+  if (Array.isArray(base) || typeof base !== "object") return partial as T;
+  if (Array.isArray(partial)) return partial as T;
+
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+  for (const key of Object.keys(partial as Record<string, unknown>)) {
+    out[key] = deepMerge(
+      (base as Record<string, unknown>)[key],
+      (partial as Record<string, unknown>)[key]
+    );
+  }
+  return out as T;
 }
 
 export async function updateSiteSettings(data: Partial<SiteSettings>): Promise<boolean> {

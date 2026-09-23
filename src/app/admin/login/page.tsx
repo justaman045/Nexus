@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { signInWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import { signInWithEmailAndPassword, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
+import { isAdminEmail } from "@/lib/admin";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Rocket, Eye, EyeSlash, Warning, GoogleLogo } from "@phosphor-icons/react";
@@ -21,7 +22,12 @@ export default function AdminLogin() {
     setError("");
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      if (!isAdminEmail(user.email)) {
+        await signOut(auth);
+        setError("This account is not authorized to access the admin console.");
+        return;
+      }
       router.push("/admin/dashboard");
     } catch {
       setError("Invalid credentials. Please try again.");
@@ -34,7 +40,12 @@ export default function AdminLogin() {
     setError("");
     setGoogleLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { user } = await signInWithPopup(auth, googleProvider);
+      if (!isAdminEmail(user.email)) {
+        await signOut(auth);
+        setError("This Google account is not authorized to access the admin console.");
+        return;
+      }
       router.push("/admin/dashboard");
     } catch {
       setError("Google sign-in failed. Please try again.");
