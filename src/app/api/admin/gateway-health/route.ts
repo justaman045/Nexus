@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
-import { getAuth } from "@/lib/server/firebase";
 import { getGatewayReadiness } from "@/lib/server/gatewayConfig";
+import { verifyIdToken } from "@/lib/server/verifyIdToken";
+
+function getProjectId(): string {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
+    try {
+        const parsed = JSON.parse(raw) as { project_id?: string };
+        if (!parsed.project_id) throw new Error("FIREBASE_SERVICE_ACCOUNT missing project_id");
+        return parsed.project_id;
+    } catch (e) {
+        throw new Error(`FIREBASE_SERVICE_ACCOUNT invalid: ${e instanceof Error ? e.message : String(e)}`);
+    }
+}
 
 const getAllowlist = (): string[] =>
     (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
@@ -16,8 +28,8 @@ export async function GET(req: Request) {
     }
 
     try {
-        const decoded = await getAuth().verifyIdToken(token);
-        const email = (decoded.email || "").toLowerCase();
+        const claims = await verifyIdToken(token, getProjectId());
+        const email = (claims.email || "").toLowerCase();
         const allowlist = getAllowlist();
         if (!email || (allowlist.length > 0 && !allowlist.includes(email))) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
