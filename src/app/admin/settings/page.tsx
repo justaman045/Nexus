@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { updateHomepageContent, defaultContent } from "@/lib/cms";
 import { seedProducts } from "@/lib/products";
 import { getPaymentSettings, setPaymentGateway, setMultiCurrencyEnabled, PaymentGateway } from "@/lib/paymentSettings";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { motion } from "framer-motion";
 import { Database, Check, Warning, CircleNotch, CreditCard, ArrowsLeftRight, Globe } from "@phosphor-icons/react";
 import { Glass, EASE } from "../_components/shared";
@@ -21,9 +23,16 @@ const GATEWAYS = [
     name: "Stripe",
     description: "Global payments. Cards, Apple Pay, Google Pay & more.",
     color: "#635BFF",
-    envRequired: ["STRIPE_SECRET_KEY", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"],
+    envRequired: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
   },
 ];
+
+interface Readiness {
+    configured: boolean;
+    missing: string[];
+}
+
+type GatewayReadiness = Record<PaymentGateway, Readiness> | null;
 
 export default function AdminSettings() {
   const [dbStatus, setDbStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -33,6 +42,10 @@ export default function AdminSettings() {
   const [gwLoading, setGwLoading] = useState(true);
   const [gwSaving, setGwSaving] = useState(false);
   const [gwStatus, setGwStatus] = useState<"idle" | "success" | "error">("idle");
+  const [gwErrorDetail, setGwErrorDetail] = useState("Failed to switch gateway. Check Firestore permissions.");
+
+  const [gatewayReady, setGatewayReady] = useState<GatewayReadiness>(null);
+  const [healthError, setHealthError] = useState(false);
 
   const [multiCurrency, setMultiCurrency] = useState(true);
   const [mcSaving, setMcSaving] = useState(false);
@@ -47,6 +60,26 @@ export default function AdminSettings() {
       setCurrentGateway("razorpay");
       setGwLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/admin/gateway-health", { headers: { Authorization: `Bearer ${token}` } });
+        if (!alive) return;
+        if (res.ok) setGatewayReady(await res.json());
+        else setHealthError(true);
+      } catch {
+        if (alive) setHealthError(true);
+      }
+    });
+    return () => {
+      alive = false;
+      unsub();
+    };
   }, []);
 
   const handleToggleMultiCurrency = async (enabled: boolean) => {
@@ -81,8 +114,20 @@ export default function AdminSettings() {
 
   const handleSwitchGateway = async (gateway: PaymentGateway) => {
     if (gateway === currentGateway || gwSaving) return;
+
+    const ready = gatewayReady?.[gateway];
+    if (ready && !ready.configured) {
+      setGwErrorDetail(`Cannot switch — ${GATEWAYS.find(g => g.id === gateway)?.name} is not configured on the server. Missing environment variables: ${ready.missing.join(", ")}. Set them in Vercel first.`);
+      setGwStatus("error");
+      return;
+    }
+
+    const gw = GATEWAYS.find((g) => g.id === gateway);
+    if (!confirm(`Switch the active payment gateway to ${gw?.name}? New checkouts will use it within ~30 seconds. Orders already in progress are unaffected.`)) return;
+
     setGwSaving(true);
     setGwStatus("idle");
+    setGwErrorDetail("Failed to switch gateway. Check Firestore permissions.");
     try {
       await setPaymentGateway(gateway);
       setCurrentGateway(gateway);
@@ -175,6 +220,34 @@ export default function AdminSettings() {
                       ))}
                     </div>
 
+                    <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold">
+                      {(() => {
+                        const readiness = gatewayReady?.[gw.id];
+                        if (readiness) {
+                          return readiness.configured ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" style={{ boxShadow: "0 0 4px #34d399" }} />
+                              <span className="text-emerald-400/80">Ready</span>
+                            </>
+                          ) : (
+                            <>
+                              <Warning size={12} className="text-amber-400/80" />
+                              <span className="text-amber-400/80">Not configured — missing: {readiness.missing.join(", ")}</span>
+                            </>
+                          );
+                        }
+                        if (healthError) {
+                          return (
+                            <>
+                              <Warning size={12} className="text-white/20" />
+                              <span className="text-white/20">Readiness unavailable</span>
+                            </>
+                          );
+                        }
+                        return <span className="text-white/20">Checking configuration…</span>;
+                      })()}
+                    </div>
+
                     {!isActive && (
                       <div className="mt-4 flex items-center gap-1.5 text-white/30 text-[12px] font-semibold">
                         <ArrowsLeftRight size={12} />
@@ -211,7 +284,7 @@ export default function AdminSettings() {
               className="mt-5 flex items-center gap-2.5 bg-red-500/[0.07] border border-red-500/[0.12] text-red-400/80 px-4 py-3 rounded-xl text-[13px] font-medium"
             >
               <Warning size={15} />
-              Failed to switch gateway. Check Firestore permissions.
+              {gwErrorDetail}
             </motion.div>
           )}
         </Glass>

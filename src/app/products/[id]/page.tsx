@@ -320,6 +320,8 @@ function GitHubStatsBar({ github }: { github: NonNullable<Product["github"]> }) 
     );
 }
 
+type CheckoutResult = "ok" | "error" | "fallback";
+
 export default function ProductDetailsPage() {
     const { id } = useParams();
     const [product, setProduct] = useState<Product | null>(null);
@@ -345,14 +347,14 @@ export default function ProductDetailsPage() {
         });
     }, [id]);
 
-    const processRazorpay = async () => {
+    const processRazorpay = async (): Promise<CheckoutResult> => {
         let RazorpayCtor = getRazorpay();
         if (!RazorpayCtor) {
             const loaded = await loadRazorpayScript();
-            if (!loaded) { setCheckoutError("Failed to load payment gateway. Please try again."); return; }
+            if (!loaded) { setCheckoutError("Failed to load payment gateway. Please try again."); return "error"; }
             RazorpayCtor = getRazorpay();
         }
-        if (!RazorpayCtor) { setCheckoutError("Failed to load payment gateway. Please try again."); return; }
+        if (!RazorpayCtor) { setCheckoutError("Failed to load payment gateway. Please try again."); return "error"; }
 
         // Razorpay only accepts INR — convert the USD price directly.
         const chargeAmount = convertTo("INR", product!.price);
@@ -368,8 +370,9 @@ export default function ProductDetailsPage() {
         });
         const order = await res.json().catch(() => null);
         if (!res.ok || !order?.id) {
+            if (order?.code === "gateway_not_configured") return "fallback";
             setCheckoutError(order?.error || "Failed to initiate payment. Please try again.");
-            return;
+            return "error";
         }
 
         const options: RazorpayOptions = {
@@ -423,9 +426,10 @@ export default function ProductDetailsPage() {
             setIsProcessing(false);
         });
         paymentObject.open();
+        return "ok";
     };
 
-    const processStripe = async () => {
+    const processStripe = async (): Promise<CheckoutResult> => {
         const chargeAmount = convert(product!.price);
         const res = await fetch("/api/stripe", {
             method: "POST",
@@ -442,8 +446,9 @@ export default function ProductDetailsPage() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.url || !data?.sessionId) {
+            if (data?.code === "gateway_not_configured") return "fallback";
             setCheckoutError(data?.error || "Failed to initiate Stripe checkout.");
-            return;
+            return "error";
         }
         sessionStorage.setItem("stripe_pending", JSON.stringify({
             productId: product!.id,
@@ -453,6 +458,7 @@ export default function ProductDetailsPage() {
             customerInfo: userDetails,
         }));
         window.location.href = data.url;
+        return "ok";
     };
 
     const handleCheckout = async (e: React.FormEvent) => {
@@ -460,12 +466,13 @@ export default function ProductDetailsPage() {
         setIsProcessing(true);
         setCheckoutError(null);
         try {
-            if (gateway === "stripe") {
-                await processStripe();
-                setIsProcessing(false);
-            } else {
-                await processRazorpay();
+            const primary = gateway === "stripe" ? await processStripe() : await processRazorpay();
+            if (primary === "fallback") {
+                const secondary = gateway === "stripe" ? await processRazorpay() : await processStripe();
+                if (secondary !== "ok" && secondary !== "fallback") setIsProcessing(false);
+                return;
             }
+            if (primary !== "ok") setIsProcessing(false);
         } catch {
             setCheckoutError("Failed to initiate payment. Please try again.");
             setIsProcessing(false);

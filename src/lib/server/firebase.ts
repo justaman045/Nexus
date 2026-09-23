@@ -1,5 +1,6 @@
 import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth as adminAuth } from "firebase-admin/auth";
 
 function getAdminApp() {
     const existing = getApps().find((a) => a.name === "nexus-server");
@@ -25,4 +26,8 @@ export function getDb() {
 
 export function getServerTimestamp() {
     return FieldValue.serverTimestamp();
+}
+
+export function getAuth() {
+    return adminAuth(getAdminApp());
 }

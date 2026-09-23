@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 
 export async function POST(req: Request) {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+        return NextResponse.json(
+            { error: "Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to .env.local", code: "gateway_not_configured" },
+            { status: 503 }
+        );
+    }
+
     try {
         const { amount, currency, productId } = await req.json();
 
