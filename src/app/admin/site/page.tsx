@@ -24,7 +24,7 @@ function StringArrayEditor({ values, onChange, placeholder }: { values: string[]
   return (
     <div className="space-y-2">
       {values.map((v, i) => (
-        <div key={i} className="flex gap-2">
+        <div key={`${i}-${v}`} className="flex gap-2">
           <input value={v} onChange={(e) => { const n = [...values]; n[i] = e.target.value; onChange(n); }} className={inputCls} placeholder={placeholder} />
           <button onClick={() => onChange(values.filter((_, j) => j !== i))}
             className="shrink-0 w-10 h-10 flex items-center justify-center text-white/20 hover:text-red-400/70 bg-white/[0.02] border border-white/[0.05] rounded-xl transition-all text-[16px]">x</button>
@@ -40,7 +40,7 @@ function NavLinksEditor({ links, onChange }: { links: { label: string; href: str
   return (
     <div className="space-y-2">
       {links.map((link, i) => (
-        <div key={i} className="flex gap-2 items-center">
+        <div key={`${i}-${link.label}-${link.href}`} className="flex gap-2 items-center">
           <input value={link.label} onChange={(e) => { const n = [...links]; n[i] = { ...n[i], label: e.target.value }; onChange(n); }} className={inputCls} placeholder="Label" />
           <input value={link.href} onChange={(e) => { const n = [...links]; n[i] = { ...n[i], href: e.target.value }; onChange(n); }} className={inputCls} placeholder="/path" />
           <button onClick={() => onChange(links.filter((_, j) => j !== i))}
@@ -57,7 +57,7 @@ function FooterColumnsEditor({ columns, onChange }: { columns: SiteSettings["foo
   return (
     <div className="space-y-4">
       {columns.map((col, i) => (
-        <div key={i} className="p-4 rounded-2xl space-y-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+        <div key={`${i}-${col.heading}`} className="p-4 rounded-2xl space-y-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
           <div className="flex items-center justify-between">
             <input value={col.heading} onChange={(e) => { const n = [...columns]; n[i] = { ...n[i], heading: e.target.value }; onChange(n); }} className={inputCls + " max-w-[200px]"} placeholder="Column heading" />
             <button onClick={() => onChange(columns.filter((_, j) => j !== i))}

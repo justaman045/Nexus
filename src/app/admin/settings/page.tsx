@@ -116,7 +116,14 @@ export default function AdminSettings() {
     if (gateway === currentGateway || gwSaving) return;
 
     const ready = gatewayReady?.[gateway];
-    if (ready && !ready.configured) {
+    // Block switching when health status is unknown (e.g. gateway-health route
+    // errored) or when the target gateway isn't configured on the server.
+    if (!ready || healthError) {
+      setGwErrorDetail(`Cannot switch — unable to verify that ${GATEWAYS.find(g => g.id === gateway)?.name} is configured on the server.`);
+      setGwStatus("error");
+      return;
+    }
+    if (!ready.configured) {
       setGwErrorDetail(`Cannot switch — ${GATEWAYS.find(g => g.id === gateway)?.name} is not configured on the server. Missing environment variables: ${ready.missing.join(", ")}. Set them in Vercel first.`);
       setGwStatus("error");
       return;
@@ -310,6 +317,8 @@ export default function AdminSettings() {
 
             {/* Toggle switch */}
             <button
+              role="switch"
+              aria-checked={multiCurrency}
               onClick={() => handleToggleMultiCurrency(!multiCurrency)}
               disabled={mcSaving || gwLoading}
               className="relative shrink-0 w-12 h-6 rounded-full transition-all duration-300 disabled:opacity-40"

@@ -13,7 +13,9 @@ const JWKS_TTL_MS = 60 * 60 * 1000;
 let cachedKeys: { fetchedAt: number; keys: Map<string, KeyObject> } | null = null;
 
 async function fetchSigningKeys(): Promise<Map<string, KeyObject>> {
-    const res = await fetch(JWKS_URL);
+    const res = await fetch(JWKS_URL, {
+        signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) {
         throw new Error(`Failed to fetch Firebase signing keys: ${res.status}`);
     }
@@ -72,7 +74,19 @@ export async function verifyIdToken(token: string, projectId: string): Promise<F
     if (!cachedKeys || Date.now() - cachedKeys.fetchedAt > JWKS_TTL_MS) {
         cachedKeys = { fetchedAt: Date.now(), keys: await fetchSigningKeys() };
     }
-    const key = header.kid ? cachedKeys.keys.get(header.kid) : undefined;
+    let key = header.kid ? cachedKeys.keys.get(header.kid) : undefined;
+    // If the signing key was rotated after the cache was populated, refetch
+    // once before failing — otherwise every admin token signed with the new
+    // key is rejected for up to an hour.
+    if (!key && header.kid) {
+        try {
+            const refreshed = await fetchSigningKeys();
+            cachedKeys = { fetchedAt: Date.now(), keys: refreshed };
+            key = refreshed.get(header.kid);
+        } catch {
+            // fall through to "Unknown signing key" error below
+        }
+    }
     if (!key) throw new Error("Unknown signing key");
 
     const verifier = createVerify("RSA-SHA256");

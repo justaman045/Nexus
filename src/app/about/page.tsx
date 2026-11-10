@@ -49,7 +49,7 @@ export default function AboutPage() {
               className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-secondary/60 border border-border text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
-              Our Story
+              {content.about?.title || "Our Story"}
             </motion.div>
 
             <motion.h1

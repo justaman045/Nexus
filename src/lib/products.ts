@@ -118,10 +118,10 @@ export async function getProductById(id: string): Promise<Product | null> {
             }
             return product;
         }
-        return MOCK_PRODUCTS.find((p) => p.id === id) || null;
+        return null;
     } catch (error) {
         console.error("Error fetching product:", error);
-        return MOCK_PRODUCTS.find((p) => p.id === id) || null;
+        return null;
     }
 }
 
@@ -129,16 +129,26 @@ export async function addProduct(product: Omit<Product, "id" | "purchases" | "cr
     const newProduct = {
         ...product,
         purchases: 0,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
     };
+    // Firestore Web SDK rejects `undefined` field values synchronously.
+    // Strip them before writing.
+    const clean = Object.fromEntries(
+        Object.entries(newProduct).filter(([, v]) => v !== undefined)
+    );
     cachedProducts = null;
-    return await addDoc(collection(db, "products"), newProduct);
+    return await addDoc(collection(db, "products"), clean);
 }
 
 export async function updateProduct(id: string, product: Partial<Product>) {
     const docRef = doc(db, "products", id);
+    // Strip undefined fields — Firestore Web SDK rejects `undefined` values
+    // synchronously in setDoc.
+    const clean = Object.fromEntries(
+        Object.entries(product).filter(([, v]) => v !== undefined)
+    );
     cachedProducts = null;
-    return await setDoc(docRef, product, { merge: true });
+    return await setDoc(docRef, clean, { merge: true });
 }
 
 export async function deleteProduct(id: string) {

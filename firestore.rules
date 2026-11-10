@@ -28,22 +28,31 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Append-only contact form spam-safe: any signed request may create.
+    // Contact form: authenticated users only, with field size limits to prevent abuse.
     match /contacts/{documentId} {
-      allow create: if true;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(["name", "email", "subject", "message", "createdAt"])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 5000;
       allow read, update, delete: if false;
     }
 
     // Financial records are written exclusively via the Admin SDK (server).
-    // Reads are public today because there is no per-user auth model; revisit
-    // when Firebase Auth read-privacy lands.
+    // Reads are restricted to admins — customer-facing lookup goes through
+    // authenticated server routes that scope by email.
     match /orders/{documentId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if false;
     }
 
     match /licenses/{documentId} {
-      allow read: if true;
+      allow read: if isAdmin();
       allow write: if false;
     }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { gatewayMinorMultiplier } from "@/lib/currency";
+import { getDb } from "@/lib/server/firebase";
+import { usdToMinorUnits } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
   }
 
-  if (event.type !== "checkout.session.completed") {
+  if (event.type !== "checkout.session.completed" && event.type !== "checkout.session.async_payment_succeeded") {
     return NextResponse.json({ received: true });
   }
 
@@ -44,23 +45,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, skipped: "no product" });
   }
 
-  const currency = (session.currency ?? "usd").toUpperCase();
-  const amount = (session.amount_total ?? 0) / gatewayMinorMultiplier(currency);
+  // Server-authoritative: recompute the expected amount and reject mismatch.
+  const db = getDb();
+  const productSnap = await db.collection("products").doc(productId).get();
+  if (!productSnap.exists) {
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
+  }
+  const product = productSnap.data() as { price?: number } | undefined;
+  const usdPrice = typeof product?.price === "number" ? product.price : 0;
+  const expectedMinorUnits = await usdToMinorUnits(usdPrice, (session.currency ?? "usd").toUpperCase());
+
+  const chargedMinorUnits = Number(session.amount_total ?? 0);
+  if (chargedMinorUnits !== expectedMinorUnits) {
+    console.error("Stripe webhook amount mismatch", { sessionId: session.id, expected: expectedMinorUnits, charged: chargedMinorUnits });
+    return NextResponse.json({ error: "Charged amount does not match product price" }, { status: 400 });
+  }
 
   try {
-    // Idempotent — repeated delivery for the same session reuses the stored order.
+    // Idempotent — keyed on the Checkout Session id (identical in webhook and verify paths).
     await fulfillVerifiedOrder({
       gateway: "stripe",
       orderId: session.id,
-      paymentId: (session.payment_intent as string) ?? `pi_${session.id}`,
+      paymentId: typeof session.payment_intent === "string" ? session.payment_intent : `pi_${session.id}`,
       productId,
       customerInfo: {
-        name: metadata.customerName ?? session.customer_details?.name,
-        email: session.customer_email ?? metadata.customerEmail,
-        contact: metadata.customerContact,
+        name: metadata.customerName ?? session.customer_details?.name ?? undefined,
+        email: session.customer_email ?? metadata.customerEmail ?? undefined,
+        contact: metadata.customerContact ?? undefined,
       },
-      amount,
-      currency,
+      amount: chargedMinorUnits / 100,
+      currency: (session.currency ?? "usd").toUpperCase(),
     });
   } catch (err) {
     console.error("Stripe webhook fulfillment failed:", err);

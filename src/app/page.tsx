@@ -71,7 +71,7 @@ export default function Home() {
       setContent(c);
       setProducts(p.slice(0, 3));
       setIsLoading(false);
-    });
+    }).catch(() => setIsLoading(false));
   }, []);
 
   const dark = resolvedTheme !== "light";

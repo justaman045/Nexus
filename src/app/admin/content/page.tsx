@@ -38,6 +38,7 @@ export default function AdminContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     getHomepageContent()
@@ -51,11 +52,13 @@ export default function AdminContent() {
   const handleSave = async () => {
     if (!content) return;
     setIsSaving(true);
+    setSaveError(null);
     try {
       await updateHomepageContent(content);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save content.");
       console.error(e);
     } finally {
       setIsSaving(false);
@@ -88,6 +91,7 @@ export default function AdminContent() {
 
   const removeFAQ = (i: number) => {
     if (!content) return;
+    if (!confirm("Remove this FAQ item?")) return;
     setContent({ ...content, faq: content.faq.filter((_, idx) => idx !== i) });
   };
 
@@ -111,6 +115,7 @@ export default function AdminContent() {
 
   const removeTestimonial = (i: number) => {
     if (!content) return;
+    if (!confirm("Remove this testimonial?")) return;
     setContent({ ...content, testimonials: content.testimonials.filter((_, idx) => idx !== i) });
   };
 
@@ -128,6 +133,7 @@ export default function AdminContent() {
 
   const removeCategory = (i: number) => {
     if (!content) return;
+    if (!confirm("Remove this category?")) return;
     setContent({ ...content, categories: (content.categories || []).filter((_, idx) => idx !== i) });
   };
 
@@ -164,6 +170,15 @@ export default function AdminContent() {
             className="flex items-center gap-2 bg-emerald-500/[0.1] border border-emerald-500/[0.15] text-emerald-400/80 px-4 py-2 rounded-xl text-[13px] font-semibold"
           >
             <Check size={14} weight="bold" /> Saved successfully
+          </motion.div>
+        )}
+        {saveError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 bg-red-500/[0.1] border border-red-500/[0.15] text-red-400/80 px-4 py-2 rounded-xl text-[13px] font-semibold"
+          >
+            <Trash size={14} weight="bold" /> {saveError}
           </motion.div>
         )}
       </div>

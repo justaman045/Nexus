@@ -31,7 +31,13 @@ export async function GET(req: Request) {
         const claims = await verifyIdToken(token, getProjectId());
         const email = (claims.email || "").toLowerCase();
         const allowlist = getAllowlist();
-        if (!email || (allowlist.length > 0 && !allowlist.includes(email))) {
+        // Fail closed: no allowlist configured means no admin access.
+        if (allowlist.length === 0) {
+            return NextResponse.json({ error: "Admin allowlist not configured" }, { status: 503 });
+        }
+        // Require a verified email — Firebase allows unverified sign-ins with
+        // arbitrary addresses, which would otherwise impersonate an admin.
+        if (!email || !claims.emailVerified || !allowlist.includes(email)) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
     } catch {

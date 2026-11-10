@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
-import { gatewayMinorMultiplier } from "@/lib/currency";
+import { getDb } from "@/lib/server/firebase";
+import { usdToMinorUnits } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 
 export async function GET(req: Request) {
@@ -26,30 +27,49 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Session has no associated product" }, { status: 400 });
     }
 
-    const currency = (session.currency ?? "usd").toUpperCase();
-    const amount = (session.amount_total ?? 0) / gatewayMinorMultiplier(currency);
+    // Server-authoritative: recompute the expected amount from the product's
+    // USD price and reject if the charged amount doesn't match.
+    const db = getDb();
+    const productSnap = await db.collection("products").doc(productId).get();
+    if (!productSnap.exists) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+    const product = productSnap.data() as { price?: number } | undefined;
+    const usdPrice = typeof product?.price === "number" ? product.price : 0;
+    const expectedMinorUnits = await usdToMinorUnits(usdPrice, (session.currency ?? "usd").toUpperCase());
 
+    const chargedMinorUnits = Number(session.amount_total ?? 0);
+    if (chargedMinorUnits !== expectedMinorUnits) {
+      return NextResponse.json(
+        { error: "Charged amount does not match product price" },
+        { status: 400 }
+      );
+    }
+
+    const currency = (session.currency ?? "usd").toUpperCase();
+    const amount = chargedMinorUnits / 100;
+
+    // Idempotency keyed on the Checkout Session id (identical in webhook and
+    // verify paths), not on payment_intent which can differ between them.
     const result = await fulfillVerifiedOrder({
       gateway: "stripe",
-      orderId: sessionId,
-      paymentId: (session.payment_intent as string) ?? `pi_${sessionId}`,
+      orderId: session.id,
+      paymentId: typeof session.payment_intent === "string" ? session.payment_intent : `pi_${session.id}`,
       productId,
       customerInfo: {
-        name: metadata.customerName,
-        email: session.customer_email ?? metadata.customerEmail,
-        contact: metadata.customerContact,
+        name: metadata.customerName ?? session.customer_details?.name ?? undefined,
+        email: session.customer_email ?? metadata.customerEmail ?? undefined,
+        contact: metadata.customerContact ?? undefined,
       },
       amount,
       currency,
     });
 
+    // Don't return customer PII or the raw metadata — only what the client needs.
     return NextResponse.json({
-      paymentId: (session.payment_intent as string) ?? `pi_${sessionId}`,
+      orderId: session.id,
       amount,
       currency,
-      metadata,
-      customerEmail: session.customer_email ?? null,
-      orderId: result.orderId,
       licenseKey: result.licenseKey,
     });
   } catch (error) {

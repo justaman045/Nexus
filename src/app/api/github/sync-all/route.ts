@@ -57,13 +57,15 @@ async function syncAll() {
 }
 
 async function run(req: NextRequest) {
-  // Optional guard set via CRON_SECRET; Vercel Cron sends it as a Bearer token.
+  // Guard: CRON_SECRET is required. Vercel Cron sends it as a Bearer token.
+  // Fail closed — if not configured, the endpoint is unreachable.
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!cronSecret) {
+    return NextResponse.json({ error: "Cron not configured" }, { status: 503 });
+  }
+  const auth = req.headers.get("authorization");
+  if (auth !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {

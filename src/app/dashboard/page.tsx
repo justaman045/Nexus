@@ -69,9 +69,36 @@ export default function CustomerDashboard() {
   const [supportEmail, setSupportEmail] = useState("hello@nexus.com");
 
   useEffect(() => {
+    let requestId = 0;
+
+    async function fetchUserLicenses(email: string, expectedId: number) {
+      setIsFetchingLicenses(true);
+      try {
+        const userLicenses = await getLicensesByEmail(email);
+        if (expectedId !== requestId) return;
+        const withProducts = await Promise.all(
+          userLicenses.map(async (l) => ({ ...l, product: await getProductById(l.productId) }))
+        );
+        if (expectedId !== requestId) return;
+        setLicenses(withProducts);
+      } catch (e) {
+        if (expectedId === requestId) console.error(e);
+      } finally {
+        if (expectedId === requestId) setIsFetchingLicenses(false);
+      }
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      const myId = ++requestId;
       setUser(u);
-      if (u?.email) await fetchUserLicenses(u.email);
+      if (!u?.email) {
+        setLicenses([]);
+        setLoading(false);
+        return;
+      }
+      if (myId !== requestId) return;
+      await fetchUserLicenses(u.email, myId);
+      if (myId !== requestId) return;
       setLoading(false);
     });
     getHomepageContent()
@@ -83,21 +110,6 @@ export default function CustomerDashboard() {
     return () => unsubscribe();
   }, []);
 
-  async function fetchUserLicenses(email: string) {
-    setIsFetchingLicenses(true);
-    try {
-      const userLicenses = await getLicensesByEmail(email);
-      const withProducts = await Promise.all(
-        userLicenses.map(async (l) => ({ ...l, product: await getProductById(l.productId) }))
-      );
-      setLicenses(withProducts);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsFetchingLicenses(false);
-    }
-  }
-
   const handleLogin = async () => {
     try { await signInWithPopup(auth, googleProvider); } catch (e) { console.error(e); }
   };
@@ -105,7 +117,7 @@ export default function CustomerDashboard() {
   const handleLogout = async () => { await signOut(auth); setLicenses([]); };
 
   const copyKey = (key: string) => {
-    navigator.clipboard.writeText(key);
+    navigator.clipboard.writeText(key).catch(() => {});
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
   };
@@ -246,7 +258,7 @@ export default function CustomerDashboard() {
             {[
               { label: "Licenses", value: licenses.length, icon: Key },
               { label: "Products", value: uniqueProductCount, icon: Cube },
-              { label: "Member since", value: oldestDate(licenses), icon: Clock },
+              { label: "First purchase", value: oldestDate(licenses), icon: Clock },
               { label: "Latest", value: timeAgo(licenses[0]?.createdAt), icon: Tag },
             ].map((stat) => (
               <div
@@ -338,8 +350,11 @@ export default function CustomerDashboard() {
                   backdropFilter: "blur(20px) saturate(180%)",
                   WebkitBackdropFilter: "blur(20px) saturate(180%)",
                 }}
+                tabIndex={0}
                 onMouseEnter={() => setRevealedKey(license.id || null)}
                 onMouseLeave={() => setRevealedKey(null)}
+                onFocus={() => setRevealedKey(license.id || null)}
+                onBlur={() => setRevealedKey(null)}
               >
                 {/* Gradient Accent Bar */}
                 <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-gradient-to-b from-accent via-purple-500 to-accent/30 opacity-60 group-hover:opacity-100 transition-opacity" />
@@ -364,9 +379,9 @@ export default function CustomerDashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="text-[17px] font-bold tracking-tight leading-tight">{license.productName}</h3>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400/80 border border-emerald-500/[0.15] shrink-0 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse-dot" />
-                        Active
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1 ${license.status === "revoked" ? "bg-red-500/[0.07] text-red-600 dark:text-red-400/80 border border-red-500/[0.15]" : "bg-emerald-500/[0.07] text-emerald-600 dark:text-emerald-400/80 border border-emerald-500/[0.15]"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${license.status === "revoked" ? "bg-red-500" : "bg-emerald-500"} animate-pulse-dot`} />
+                        {license.status === "revoked" ? "Revoked" : "Active"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">

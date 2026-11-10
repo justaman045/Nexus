@@ -32,7 +32,7 @@ function CodeBlock({ className, children, ...props }: { className?: string; chil
     const lang = className?.replace("language-", "") || "";
 
     const handleCopy = useCallback(() => {
-        navigator.clipboard.writeText(codeText);
+        navigator.clipboard.writeText(codeText).catch(() => {});
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     }, [codeText]);
@@ -186,10 +186,23 @@ const markdownComponents: Components = {
     ),
 };
 
-function looksLikeMarkdown(text: string): boolean {
-    return /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|```|>\s|\|.+\||\[.+\]\(.+\))/.test(text)
-        || /\*\*.*?\*\*|`[^`]+`|(\s|^)[-*+]\s/.test(text)
-        || /^[\u{1F300}-\u{1FAFF}]|^[\u{2700}-\u{27BF}]|^★/u.test(text.trim());
+// Minimal HTML allow-list sanitizer for product longDescription (html type).
+// Strips <script>, style, on* event handlers and javascript: URLs to prevent
+// stored XSS from admin-editable HTML content.
+function sanitizeHtml(html: string): string {
+    if (!html) return html;
+    const out = html
+        // Remove script blocks entirely
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        // Strip on* event handlers
+        .replace(/\bon[a-z]+=["'][^"']*["']/gi, "")
+        .replace(/\bon[a-z]+=[^>\s]+/gi, "")
+        // Strip javascript: URLs
+        .replace(/javascript:/gi, "")
+        // Strip vbscript: / data: with script-like content (defensive)
+        .replace(/vbscript:/gi, "");
+    return out;
 }
 
 function ProductDescription({ content, type }: { content: string; type: "plain" | "markdown" | "html" }) {
@@ -197,12 +210,12 @@ function ProductDescription({ content, type }: { content: string; type: "plain" 
         return (
             <div
                 className="prose prose-sm max-w-none text-muted-foreground [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/80 [&_a]:text-accent"
-                dangerouslySetInnerHTML={{ __html: content }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(content) }}
             />
         );
     }
 
-    if (type === "markdown" || looksLikeMarkdown(content)) {
+    if (type === "markdown") {
         return (
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {content}
@@ -333,7 +346,7 @@ export default function ProductDetailsPage() {
 
     const siteSettings = useSiteSettings();
     const [gateway, setGateway] = useState<PaymentGateway>("razorpay");
-    const { currency, format: formatCurrency, convert, convertTo } = useCurrency();
+    const { currency, format: formatCurrency, convertTo } = useCurrency();
 
     useEffect(() => {
         if (!id) return;
@@ -347,6 +360,15 @@ export default function ProductDetailsPage() {
         });
     }, [id]);
 
+    // Close payment modal on Escape
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape" && showPaymentModal) setShowPaymentModal(false);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, [showPaymentModal]);
+
     const processRazorpay = async (): Promise<CheckoutResult> => {
         let RazorpayCtor = getRazorpay();
         if (!RazorpayCtor) {
@@ -356,15 +378,12 @@ export default function ProductDetailsPage() {
         }
         if (!RazorpayCtor) { setCheckoutError("Failed to load payment gateway. Please try again."); return "error"; }
 
-        // Razorpay only accepts INR — convert the USD price directly.
-        const chargeAmount = convertTo("INR", product!.price);
-
+        // Razorpay only accepts INR — the server computes the amount from
+        // the product's USD price; the client only sends the product id.
         const res = await fetch("/api/razorpay", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                amount: chargeAmount,
-                currency: "INR",
                 productId: product!.id,
             }),
         });
@@ -430,14 +449,14 @@ export default function ProductDetailsPage() {
     };
 
     const processStripe = async (): Promise<CheckoutResult> => {
-        const chargeAmount = convert(product!.price);
+        // The server computes the unit_amount from the product's USD price;
+        // the client only sends productId + currency.
         const res = await fetch("/api/stripe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                amount: chargeAmount,
-                currency: currency.code,
                 productId: product!.id,
+                currency: currency.code,
                 productName: product!.name,
                 customerName: userDetails.name,
                 customerEmail: userDetails.email,
@@ -453,7 +472,6 @@ export default function ProductDetailsPage() {
         sessionStorage.setItem("stripe_pending", JSON.stringify({
             productId: product!.id,
             productName: product!.name,
-            amount: chargeAmount,
             currency: currency.code,
             customerInfo: userDetails,
         }));
@@ -599,11 +617,11 @@ export default function ProductDetailsPage() {
                             </span>
                         </div>
 
-                        {product.features.length > 0 && (
+                        {product.features?.length > 0 && (
                             <div className="space-y-3">
                                 <p className="text-[11px] font-bold tracking-[0.14em] uppercase text-muted-foreground">What&apos;s included</p>
                                 <ul className="space-y-2">
-                                    {product.features.map((feature, i) => (
+                                    {(product.features || []).map((feature, i) => (
                                         <li key={i} className="flex items-start gap-2.5 text-[14px] text-foreground/80">
                                             <Check size={14} weight="bold" className="text-accent mt-0.5 shrink-0" />
                                             {feature}
@@ -681,7 +699,7 @@ export default function ProductDetailsPage() {
                             transition={{ type: "spring", damping: 28, stiffness: 240 }}
                             className="fixed inset-0 z-[70] flex items-center justify-center p-6 pointer-events-none"
                         >
-                            <div className="bg-card w-full max-w-md rounded-[24px] border border-border pointer-events-auto shadow-2xl p-8 relative">
+                            <div className="bg-card w-full max-w-md rounded-[24px] border border-border pointer-events-auto shadow-2xl p-8 relative" role="dialog" aria-modal="true" aria-label="Payment">
                                 <button
                                     onClick={() => setShowPaymentModal(false)}
                                     disabled={isProcessing}
@@ -730,9 +748,10 @@ export default function ProductDetailsPage() {
                                         { label: "Phone", key: "contact", type: "tel", placeholder: "+1 (000) 000-0000" },
                                     ].map(({ label, key, type, placeholder }) => (
                                         <div key={key} className="space-y-1.5">
-                                            <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{label}</label>
+                                            <label htmlFor={`checkout-${key}`} className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{label}</label>
                                             <input
-                                                required
+													id={`checkout-${key}`}
+													required
                                                 type={type}
                                                 value={userDetails[key as keyof typeof userDetails]}
                                                 onChange={e => setUserDetails({ ...userDetails, [key]: e.target.value })}

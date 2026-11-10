@@ -106,14 +106,15 @@ function OrderHistoryContent() {
     if (sessionId) handleStripeReturn(sessionId);
   }, [searchParams, handleStripeReturn]);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) return;
+  const handleSearch = async (emailValue?: string, e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const emailTrimmed = (emailValue ?? email).trim();
+    if (!emailTrimmed) return;
     setIsLoading(true);
     setHasSearched(true);
     setOrders([]);
     try {
-      const q = query(collection(db, "orders"), where("customerInfo.email", "==", email.trim()));
+      const q = query(collection(db, "orders"), where("customerInfo.email", "==", emailTrimmed));
       const snap = await getDocs(q);
       const found = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
       found.sort((a, b) => asDate(b.createdAt).getTime() - asDate(a.createdAt).getTime());
@@ -130,7 +131,7 @@ function OrderHistoryContent() {
     navigator.clipboard.writeText(key).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    }).catch(() => {});
   };
 
   const formatAmount = (amount: number, currency: string) => {
@@ -196,7 +197,7 @@ function OrderHistoryContent() {
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          onSubmit={handleSearch}
+          onSubmit={(e) => void handleSearch(undefined, e)}
           className="max-w-md mx-auto mb-16"
         >
           <div className="flex gap-3">
@@ -238,13 +239,11 @@ function OrderHistoryContent() {
             )}
 
             {orders.map((order, i) => (
-              <motion.div
+              <button
                 key={order.id}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                className="card-pro p-6 flex items-center justify-between gap-6 group cursor-pointer"
+                type="button"
                 onClick={() => setSelectedOrder(order)}
+                className="card-pro p-6 flex items-center justify-between gap-6 group cursor-pointer"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-2xl bg-accent/[0.08] border border-accent/[0.12] flex items-center justify-center">
@@ -278,7 +277,7 @@ function OrderHistoryContent() {
                     <ArrowRight size={14} />
                   </div>
                 </div>
-              </motion.div>
+              </button>
             ))}
           </AnimatePresence>
         </div>
@@ -334,7 +333,7 @@ function OrderHistoryContent() {
                     Done
                   </button>
                   <button
-                    onClick={() => { setEmail(stripeSuccess.email); setStripeSuccess(null); }}
+                    onClick={() => { setEmail(stripeSuccess.email); setStripeSuccess(null); void handleSearch(stripeSuccess.email); }}
                     className="btn-apple btn-apple-secondary flex-1 py-3 text-[14px]"
                   >
                     View Orders

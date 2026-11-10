@@ -164,9 +164,9 @@ export default function ContactPage() {
                                             { label: siteSettings.contactPage.formLabels.email, name: "email", type: "email", placeholder: "your@email.com" },
                                         ].map(f => (
                                             <div key={f.name} className="space-y-1.5">
-                                                <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{f.label}</label>
+                                                <label htmlFor={`contact-${f.name}`} className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{f.label}</label>
                                                 <input
-                                                    required
+                                                    id={`contact-${f.name}`}
                                                     type={f.type}
                                                     name={f.name}
                                                     value={formData[f.name as keyof typeof formData]}
@@ -179,9 +179,10 @@ export default function ContactPage() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.subject}</label>
+                                        <label htmlFor="contact-subject" className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.subject}</label>
                                         <input
                                             required
+                                            id="contact-subject"
                                             type="text"
                                             name="subject"
                                             value={formData.subject}
@@ -192,9 +193,10 @@ export default function ContactPage() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.message}</label>
+                                        <label htmlFor="contact-message" className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{siteSettings.contactPage.formLabels.message}</label>
                                         <textarea
                                             required
+                                            id="contact-message"
                                             name="message"
                                             value={formData.message}
                                             onChange={e => setFormData(p => ({ ...p, message: e.target.value }))}

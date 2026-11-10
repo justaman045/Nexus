@@ -1,13 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { Rocket } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { GithubLogo, LinkedinLogo, Rocket, TwitterLogo } from "@phosphor-icons/react";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+import { getHomepageContent } from "@/lib/cms";
 
 export default function Footer() {
   const siteSettings = useSiteSettings();
+  const [content, setContent] = useState<{ footer?: { description?: string; socialLinks?: { twitter?: string; github?: string; linkedin?: string } } } | null>(null);
+
+  useEffect(() => {
+    getHomepageContent().then((c) => setContent(c)).catch(() => {});
+  }, []);
 
   const year = new Date().getFullYear();
+  const socialLinks = content?.footer?.socialLinks ?? {};
 
   return (
     <footer className="bg-secondary/20 border-t border-border">
@@ -23,8 +31,27 @@ export default function Footer() {
               <span className="font-bold text-[17px] tracking-[-0.03em]">{siteSettings.brandName}</span>
             </Link>
             <p className="text-muted-foreground text-[15px] leading-relaxed max-w-[280px]">
-              Premium software, built in-house and sold exclusively through {siteSettings.brandName}.
+              {content?.footer?.description || "Premium software, built in-house and sold exclusively through " + siteSettings.brandName + "."}
             </p>
+            {Object.entries(socialLinks).length > 0 && (
+              <div className="flex gap-3">
+                {socialLinks.twitter && (
+                  <a href={socialLinks.twitter} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
+                    <TwitterLogo size={18} weight="fill" />
+                  </a>
+                )}
+                {socialLinks.github && (
+                  <a href={socialLinks.github} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
+                    <GithubLogo size={18} weight="fill" />
+                  </a>
+                )}
+                {socialLinks.linkedin && (
+                  <a href={socialLinks.linkedin} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
+                    <LinkedinLogo size={18} weight="fill" />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Nav columns */}

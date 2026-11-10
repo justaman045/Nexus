@@ -189,6 +189,11 @@ export function mergeSyncedWithManual(prev: Partial<Product>, data: GitHubRepoDa
     if (current === undefined || current === "" || current === oldSynced) {
       (out as Record<string, unknown>)[key] = newVal;
       (finalMapped as Record<string, unknown>)[key] = newVal;
+    } else if (Array.isArray(current) && Array.isArray(oldSynced)
+      ? JSON.stringify(current) === JSON.stringify(oldSynced)
+      : current === oldSynced) {
+      (out as Record<string, unknown>)[key] = newVal;
+      (finalMapped as Record<string, unknown>)[key] = newVal;
     } else {
       (out as Record<string, unknown>)[key] = current;
       // Keep the previous source value so future syncs still honour the override.

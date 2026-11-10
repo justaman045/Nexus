@@ -64,12 +64,24 @@ export default function AdminProducts() {
 
   useEffect(() => { loadData(); }, []);
 
+  // Close product modal on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsModalOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   async function loadData() {
     setIsLoading(true);
     try {
       const [productsData, contentData] = await Promise.all([getProducts(), getHomepageContent()]);
       setProducts(productsData);
-      setCategories(contentData.categories?.length ? contentData.categories : ["Developer Tool", "Design", "Productivity"]);
+      const cmsCats = contentData.categories?.length ? contentData.categories : [];
+      const usedCats = [...new Set(productsData.map((p) => p.category).filter(Boolean))];
+      const mergedCats = [...new Set([...cmsCats, ...usedCats])];
+      setCategories(mergedCats.length ? mergedCats : ["Developer Tool", "Design", "Productivity"]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -148,8 +160,10 @@ export default function AdminProducts() {
 
   const handleSyncAll = async () => {
     const synced = products.filter((p) => p.repoUrl);
-    for (const p of synced) {
-      await syncProductById(p);
+    const results = await Promise.allSettled(synced.map((p) => syncProductById(p)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      alert(`Synced ${results.length - failed}/${results.length} products. Some syncs failed — check console.`);
     }
     await loadData();
   };
@@ -171,21 +185,23 @@ export default function AdminProducts() {
     try {
       const { id, purchases, createdAt, ...rest } = currentProduct;
       void id; void purchases; void createdAt;
+      // Strip undefined fields — Firestore Web SDK rejects `undefined` values
+      // synchronously in setDoc/addDoc. Normalise optionals to "" / [] / null.
       const productToSave = {
         name: rest.name || "",
         description: rest.description || "",
         price: rest.price ?? 0,
         imageUrl: rest.imageUrl || "",
         category: rest.category || "",
-        version: rest.version,
-        demoUrl: rest.demoUrl,
-        downloadUrl: rest.downloadUrl,
-        documentationUrl: rest.documentationUrl,
-        longDescription: rest.longDescription,
+        version: rest.version ?? undefined,
+        demoUrl: rest.demoUrl ?? undefined,
+        downloadUrl: rest.downloadUrl ?? undefined,
+        documentationUrl: rest.documentationUrl ?? undefined,
+        longDescription: rest.longDescription ?? "",
         descriptionType: rest.descriptionType ?? "plain",
         features: rest.features?.map((f) => f.trim()).filter(Boolean) || [],
-        repoUrl: rest.repoUrl,
-        github: rest.github,
+        repoUrl: rest.repoUrl ?? undefined,
+        github: rest.github ?? undefined,
       };
       if (currentProduct.id) {
         await updateProduct(currentProduct.id, productToSave);
@@ -322,7 +338,7 @@ export default function AdminProducts() {
                     <span className="text-white text-[14px] font-bold">{formatCurrency(product.price)}</span>
                   </td>
                   <td className="px-8 py-5">
-                    <StatusBadge status="active" glow />
+                    <StatusBadge status={product.purchases > 0 ? "active" : "draft"} glow />
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex justify-end gap-2">
@@ -376,7 +392,7 @@ export default function AdminProducts() {
               className="fixed inset-0 z-[70] flex items-center justify-center p-6 pointer-events-none"
             >
               <div className="w-full max-w-3xl max-h-[90vh] rounded-[40px] pointer-events-auto overflow-hidden flex flex-col shadow-[0_50px_120px_rgba(0,0,0,0.8)]"
-                style={{ background: "rgba(10,10,20,0.85)", backdropFilter: "blur(40px) saturate(200%)", WebkitBackdropFilter: "blur(40px) saturate(200%)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                style={{ background: "rgba(10,10,20,0.85)", backdropFilter: "blur(40px) saturate(200%)", WebkitBackdropFilter: "blur(40px) saturate(200%)", border: "1px solid rgba(255,255,255,0.1)" }} role="dialog" aria-modal="true" aria-label={currentProduct.id ? "Edit Product" : "New Product"}>
                 {/* Accent bar */}
                 <div style={{ height: "3px", background: "linear-gradient(90deg, #6366f1, #a855f7)", flexShrink: 0 }} />
 
@@ -405,7 +421,7 @@ export default function AdminProducts() {
                     </div>
                     <div>
                       <label className={labelCls}>Price (USD)</label>
-                      <input type="number" value={currentProduct.price ?? ""} onChange={(e) => setCurrentProduct({ ...currentProduct, price: parseFloat(e.target.value) || 0 })} className={inputCls} placeholder="0.00" />
+                      <input type="number" value={currentProduct.price === undefined ? "" : String(currentProduct.price)} onChange={(e) => { const v = e.target.value; setCurrentProduct({ ...currentProduct, price: v === "" ? undefined : parseFloat(v) || 0 }); }} className={inputCls} placeholder="0.00" />
                     </div>
                     <div>
                       <label className={labelCls}>Category</label>
