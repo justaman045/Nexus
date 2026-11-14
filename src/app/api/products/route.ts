@@ -209,7 +209,12 @@ export async function POST(req: Request) {
       ...clean,
     });
   } catch (error) {
-    console.error("Error creating product:", error);
-    return NextResponse.json({ error: "Failed to create product" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error creating product:", message);
+    const isDev = process.env.NODE_ENV === "development";
+    return NextResponse.json(
+      { error: "Failed to create product", ...(isDev ? { details: message } : {}) },
+      { status: 500 }
+    );
   }
 }
