@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { getHomepageContent, HomepageContent, defaultContent } from "@/lib/cms";
 import { getProducts, Product } from "@/lib/products";
+import { ProductImage } from "@/components/ProductImage";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -386,12 +387,12 @@ export default function Home() {
                   <Link href={`/products/${product.id}`}>
                     <div className="rounded-2xl overflow-hidden group cursor-pointer hover:scale-[1.01] transition-transform duration-500" style={glass}>
                       <div className="aspect-[16/9] relative overflow-hidden bg-muted">
-                        {product.imageUrl
-                          ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.05]" />
-                          : <div className="w-full h-full flex items-center justify-center bg-foreground/[0.03]">
-                              <Package size={40} weight="thin" className="text-muted-foreground/30" />
-                            </div>
-                        }
+                        <ProductImage
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
+                          fallbackClassName="w-full h-full flex items-center justify-center bg-foreground/[0.03]"
+                        />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                         <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider"
                           style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.1)" }}>

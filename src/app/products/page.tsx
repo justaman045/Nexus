@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { MagnifyingGlass, ArrowRight, CircleNotch, Star } from "@phosphor-icons/react";
 import type { Product } from "@/lib/products";
+import { ProductImage } from "@/components/ProductImage";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -167,20 +168,12 @@ function ProductCard({ product, index }: { product: Product; index: number }) {
             <Link href={`/products/${product.id}`} className="block">
                 {/* Image */}
                 <div className="relative aspect-[3/2] rounded-[20px] overflow-hidden bg-secondary/30 border border-border mb-5">
-                    {!imageFailed && product.imageUrl ? (
-                        <img
-                            src={product.imageUrl}
-                            alt={product.name}
-                            className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-[2s] ease-out"
-                            loading="lazy"
-                            decoding="async"
-                            onError={() => setImageFailed(true)}
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                            <span className="text-5xl font-bold text-foreground/5">{product.name[0]}</span>
-                        </div>
-                    )}
+                    <ProductImage
+                        src={product.imageUrl}
+                        alt={product.name}
+                        className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-[2s] ease-out"
+                        fallbackClassName="w-full h-full flex items-center justify-center"
+                    />
                     {/* Category pill */}
                     <div className="absolute top-4 left-4">
                         <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.14em] uppercase backdrop-blur-md bg-background/70 border border-border text-foreground/80">

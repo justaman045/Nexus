@@ -21,6 +21,7 @@ import {
     Star,
 } from "@phosphor-icons/react";
 import { getProductById, Product } from "@/lib/products";
+import { ProductImage } from "@/components/ProductImage";
 import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
 import { CURRENCIES, formatPrice } from "@/lib/currency";
 import { useCurrency } from "@/components/CurrencyProvider";
@@ -528,13 +529,12 @@ export default function ProductDetailsPage() {
                         transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
                     >
                         <div className="rounded-[28px] overflow-hidden bg-muted border border-border aspect-[4/3] relative group">
-                            {product.imageUrl && (
-                                <img
-                                    src={product.imageUrl}
-                                    alt={product.name}
-                                    className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-[2s] ease-out"
-                                />
-                            )}
+                            <ProductImage
+                                src={product.imageUrl}
+                                alt={product.name}
+                                className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-[2s] ease-out"
+                                fallbackClassName="w-full h-full flex items-center justify-center"
+                            />
                         </div>
 
                         {product.longDescription && (
