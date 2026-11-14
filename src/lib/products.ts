@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, addDoc } from "firebase/firestore";
+import { collection, doc, setDoc, deleteDoc, addDoc } from "firebase/firestore";
 import type { GitHubSnapshot } from "./github";
 
 export interface Product {
@@ -35,11 +35,10 @@ export async function getProducts(): Promise<Product[]> {
     }
 
     try {
-        const querySnapshot = await getDocs(collection(db, "products"));
-        if (querySnapshot.empty) {
-            return MOCK_PRODUCTS;
-        }
-        const products = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+        const res = await fetch("/api/products");
+        if (!res.ok) throw new Error(`Products API returned ${res.status}`);
+        const data = await res.json();
+        const products = (data.products || []) as Product[];
 
         // Sort by purchases (desc), then by createdAt (newest first)
         const sortedProducts = products.sort((a, b) => {
@@ -66,20 +65,21 @@ export async function getProducts(): Promise<Product[]> {
 
 export async function getProductById(id: string): Promise<Product | null> {
     try {
-        const docRef = doc(db, "products", id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            const product = { id: docSnap.id, ...docSnap.data() } as Product;
-            // Refresh the shared cache so a subsequent getProducts() isn't stale
-            if (cachedProducts) {
-                const idx = cachedProducts.findIndex((p) => p.id === id);
-                if (idx !== -1) cachedProducts[idx] = product;
-                else cachedProducts.push(product);
-                lastProductsFetch = Date.now();
-            }
-            return product;
+        const res = await fetch(`/api/products/${id}`);
+        if (!res.ok) {
+            if (res.status === 404) return null;
+            throw new Error(`Product API returned ${res.status}`);
         }
-        return null;
+        const data = await res.json();
+        const product = data as Product;
+        // Refresh the shared cache so a subsequent getProducts() isn't stale
+        if (cachedProducts) {
+            const idx = cachedProducts.findIndex((p) => p.id === id);
+            if (idx !== -1) cachedProducts[idx] = product;
+            else cachedProducts.push(product);
+            lastProductsFetch = Date.now();
+        }
+        return product;
     } catch (error) {
         console.error("Error fetching product:", error);
         return null;
