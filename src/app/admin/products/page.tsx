@@ -227,6 +227,7 @@ export default function AdminProducts() {
         description: rest.description || "",
         price: rest.price ?? 0,
         imageUrl: rest.imageUrl || "",
+        images: Array.isArray(rest.images) ? rest.images : [],
         category: rest.category || "",
         version: rest.version ?? undefined,
         demoUrl: rest.demoUrl ?? undefined,

@@ -389,6 +389,7 @@ export default function Home() {
                       <div className="aspect-[16/9] relative overflow-hidden bg-muted">
                         <ProductImage
                           src={product.imageUrl}
+                          images={product.images}
                           alt={product.name}
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.05]"
                           fallbackClassName="w-full h-full flex items-center justify-center bg-foreground/[0.03]"

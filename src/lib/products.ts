@@ -21,6 +21,7 @@ export interface Product {
     purchases: number; // New for sorting
     createdAt: string; // New for sorting
     status?: "live" | "upcoming" | "draft" | "archived"; // Product publication status
+    images?: string[]; // Multiple product images
 }
 
 export const MOCK_PRODUCTS: Product[] = [];
