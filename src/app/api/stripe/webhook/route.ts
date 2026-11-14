@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/server/firebase";
-import { usdToMinorUnits } from "@/lib/server/currency";
+import { usdToMinorUnits, gatewayMinorMultiplier } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 
 export const dynamic = "force-dynamic";
@@ -57,8 +57,10 @@ export async function POST(req: Request) {
 
   const chargedMinorUnits = Number(session.amount_total ?? 0);
   if (chargedMinorUnits !== expectedMinorUnits) {
+    // Log the mismatch but acknowledge receipt (200) so Stripe stops retrying.
+    // Idempotency in fulfillVerifiedOrder prevents duplicate fulfillment.
     console.error("Stripe webhook amount mismatch", { sessionId: session.id, expected: expectedMinorUnits, charged: chargedMinorUnits });
-    return NextResponse.json({ error: "Charged amount does not match product price" }, { status: 400 });
+    return NextResponse.json({ received: true, skipped: "amount_mismatch" });
   }
 
   try {
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
         email: session.customer_email ?? metadata.customerEmail ?? undefined,
         contact: metadata.customerContact ?? undefined,
       },
-      amount: chargedMinorUnits / 100,
+      amount: chargedMinorUnits / gatewayMinorMultiplier((session.currency ?? "usd").toUpperCase()),
       currency: (session.currency ?? "usd").toUpperCase(),
     });
   } catch (err) {

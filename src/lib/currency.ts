@@ -79,7 +79,11 @@ export function currencyDecimals(code: string): number {
 // Currencies Stripe/Razorpay price in whole units (no minor units).
 // Note: this is the gateway subunit convention, NOT the display decimals in
 // CURRENCIES (e.g. INR is shown with 0 decimals but is a 100-subunit currency).
-const GATEWAY_ZERO_DECIMAL = new Set(["JPY", "KRW", "VND"]);
+// Must stay in sync with the server-side set in src/lib/server/currency.ts.
+const GATEWAY_ZERO_DECIMAL = new Set([
+  "BIF", "CLP", "DJF", "GNF", "JPY", "KMF", "KRW", "MGA", "PYG", "RWF",
+  "UGX", "VND", "XAF", "XOF", "XPF",
+]);
 
 // How many units of the currency's smallest subunit equal one major unit.
 export function gatewayMinorMultiplier(code: string): number {

@@ -1,21 +1,20 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/server/firebase";
-import { usdToMinorUnits } from "@/lib/server/currency";
+import { usdToMinorUnits, gatewayMinorMultiplier } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   if (!process.env.STRIPE_SECRET_KEY) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(req.url);
-  const sessionId = searchParams.get("session_id");
-  if (!sessionId) return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+  const { session_id } = (await req.json().catch(() => ({}))) as { session_id?: string };
+  if (!session_id) return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
 
   try {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" });
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const session = await stripe.checkout.sessions.retrieve(session_id);
 
     if (session.payment_status !== "paid") {
       return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
@@ -47,7 +46,9 @@ export async function GET(req: Request) {
     }
 
     const currency = (session.currency ?? "usd").toUpperCase();
-    const amount = chargedMinorUnits / 100;
+    // Convert minor units to major units using the currency's subunit multiplier
+    // (1 for zero-decimal currencies like JPY/KRW/VND, 100 for most others).
+    const amount = chargedMinorUnits / gatewayMinorMultiplier(currency);
 
     // Idempotency keyed on the Checkout Session id (identical in webhook and
     // verify paths), not on payment_intent which can differ between them.

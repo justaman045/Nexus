@@ -20,49 +20,10 @@ export interface Product {
     github?: GitHubSnapshot; // Latest synced repo metadata
     purchases: number; // New for sorting
     createdAt: string; // New for sorting
+    status?: "live" | "upcoming" | "draft" | "archived"; // Product publication status
 }
 
-const MOCK_PRODUCTS: Product[] = [
-    {
-        id: "1",
-        name: "DevFlow Pro",
-        description: "The ultimate project management tool for software engineers. Integrate git, ci/cd, and tasks in one view.",
-        longDescription: "DevFlow Pro is designed for high-performance engineering teams. It seamlessly integrates with GitHub, GitLab, and Bitbucket to bring your code and tasks into a single, unified workflow. Features include advanced Kanban boards, automated sprint tracking, and built-in CI/CD pipeline visualization.",
-        price: 49,
-        imageUrl: "https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=1000",
-        features: ["Git Integration", "CI/CD Pipelines", "Kanban Boards", "Dark Mode"],
-        category: "Developer Tool",
-        demoUrl: "https://example.com/demo/devflow",
-        purchases: 1250,
-        createdAt: "2023-01-15T10:00:00Z"
-    },
-    {
-        id: "2",
-        name: "PixelPerfect",
-        description: "AI-powered design assistant that generates code from your Figma designs in seconds.",
-        longDescription: "Stop wasting time hand-coding UI components. PixelPerfect analyzes your Figma designs and instantly generates clean, semantic React and Tailwind CSS code. It supports responsive layouts, custom design systems, and even complex animations.",
-        price: 29,
-        imageUrl: "https://images.unsplash.com/photo-1542744173-8e7e53415bb0?auto=format&fit=crop&q=80&w=1000",
-        features: ["Figma to React", "Tailwind Support", "Responsive Layouts"],
-        category: "Design",
-        demoUrl: "https://example.com/demo/pixelperfect",
-        purchases: 850,
-        createdAt: "2023-03-10T14:30:00Z"
-    },
-    {
-        id: "3",
-        name: "FocusState",
-        description: "A distraction-free writing environment and note-taking app for deep work.",
-        longDescription: "FocusState provides a zen-like writing experience for improved concentration. With a minimal interface, markdown support, and cloud sync across all devices, it helps you capture your best ideas without distractions. Includes focus modes, typewriter scrolling, and export to PDF/HTML.",
-        price: 19,
-        imageUrl: "https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&q=80&w=1000",
-        features: ["Markdown Support", "Cloud Sync", "Zen Mode"],
-        category: "Productivity",
-        demoUrl: "https://example.com/demo/focusstate",
-        purchases: 2000,
-        createdAt: "2023-05-20T09:15:00Z"
-    },
-];
+export const MOCK_PRODUCTS: Product[] = [];
 
 let cachedProducts: Product[] | null = null;
 let lastProductsFetch = 0;
@@ -130,6 +91,7 @@ export async function addProduct(product: Omit<Product, "id" | "purchases" | "cr
         ...product,
         purchases: 0,
         createdAt: new Date().toISOString(),
+        status: product.status ?? "draft",
     };
     // Firestore Web SDK rejects `undefined` field values synchronously.
     // Strip them before writing.

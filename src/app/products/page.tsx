@@ -4,9 +4,13 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { MagnifyingGlass, ArrowRight, CircleNotch, Star } from "@phosphor-icons/react";
-import { getProducts, Product } from "@/lib/products";
+import type { Product } from "@/lib/products";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
+
+interface ProductsResponse {
+    products: Product[];
+}
 
 export default function ProductsPage() {
     const siteSettings = useSiteSettings();
@@ -19,9 +23,11 @@ export default function ProductsPage() {
     useEffect(() => {
         async function loadData() {
             try {
-                const data = await getProducts();
-                setProducts(data);
-                const uniqueCategories = Array.from(new Set(data.map(p => p.category)));
+                const res = await fetch("/api/products", { cache: "no-store" });
+                if (!res.ok) throw new Error(`Products API returned ${res.status}`);
+                const data: ProductsResponse = await res.json();
+                setProducts(data.products);
+                const uniqueCategories = Array.from(new Set(data.products.map(p => p.category)));
                 setCategories(["All", ...uniqueCategories]);
             } catch (error) {
                 console.error("Failed to load products:", error);

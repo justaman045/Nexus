@@ -150,7 +150,8 @@ export async function getHomepageContent(): Promise<HomepageContent> {
     }
 }
 
-// Merges arrays/objects by key while favoring `partial` for primitive values.
+// Merges objects recursively while favoring `partial` for primitive values.
+// Arrays are replaced wholesale (not merged by key).
 function deepMergeStructure<T>(base: T, partial: unknown): T {
     if (partial === undefined || partial === null) return base;
     if (Array.isArray(base) || typeof base !== "object") return partial as T;

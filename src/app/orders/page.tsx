@@ -77,14 +77,18 @@ function OrderHistoryContent() {
     setStripeProcessing(true);
     setStripeError(null);
     try {
-      const res = await fetch(`/api/stripe/verify?session_id=${sessionId}`);
+      const res = await fetch("/api/stripe/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Verification failed");
 
       // Get pending order info from sessionStorage
       const pending = JSON.parse(sessionStorage.getItem("stripe_pending") || "null");
-      const productName = data.metadata?.productName || pending?.productName || "Unknown Product";
-      const customerEmail = data.customerEmail || data.metadata?.customerEmail || pending?.customerInfo?.email || "";
+      const productName = pending?.productName || "Unknown Product";
+      const customerEmail = data.customerEmail || pending?.customerInfo?.email || "";
 
       // Order + license are persisted server-side by the verify route.
       const licenseKey = data.licenseKey;

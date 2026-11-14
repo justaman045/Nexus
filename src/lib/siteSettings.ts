@@ -382,7 +382,9 @@ export async function getSiteSettings(): Promise<SiteSettings> {
   return cachedSettings;
 }
 
-// Recursive merge: nested objects/arrays merge by key, primitives favor `partial`.
+// Recursive merge: nested objects merge recursively, primitives favor `partial`.
+// Arrays are replaced wholesale (not merged by key) — partial updates containing
+// arrays will overwrite the entire array.
 function deepMerge<T>(base: T, partial: unknown): T {
   if (partial === undefined || partial === null) return base;
   if (Array.isArray(base) || typeof base !== "object") return partial as T;

@@ -54,8 +54,9 @@ export async function POST(req: Request) {
       amount: amountPaise.toString(), // paise
       currency: "INR",
       // Carry the real product id in notes (≤256 chars). receipt stays a
-      // short unique token so two products sharing a prefix can't collide.
-      receipt: `ord_${Date.now()}`,
+      // short unique token — Date.now() plus a random suffix prevents
+      // collisions when two orders are created in the same millisecond.
+      receipt: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       notes: { productId },
     };
 
