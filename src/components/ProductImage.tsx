@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 interface ProductImageProps {
-    src: string | undefined | null;
+    src: string | Blob | undefined | null;
     alt: string;
     className?: string;
     fallbackClassName?: string;
@@ -20,7 +20,8 @@ export function ProductImage({
     fallbackClassName = "flex items-center justify-center",
 }: ProductImageProps) {
     const [failed, setFailed] = useState(false);
-    const hasSrc = Boolean(src) && String(src).trim() !== "";
+    const srcStr = typeof src === "string" ? src : "";
+    const hasSrc = Boolean(srcStr) && srcStr.trim() !== "";
 
     if (!hasSrc || failed) {
         const initial = alt ? alt.trim().charAt(0).toUpperCase() : "?";
@@ -33,7 +34,7 @@ export function ProductImage({
 
     return (
         <img
-            src={src as string}
+            src={srcStr}
             alt={alt}
             className={className}
             loading="lazy"

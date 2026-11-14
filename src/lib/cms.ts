@@ -1,5 +1,5 @@
 import { db } from "./firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 export interface HeroSection {
     badge: string;
@@ -132,10 +132,13 @@ export async function getHomepageContent(): Promise<HomepageContent> {
     }
 
     try {
-        const res = await fetch("/api/cms");
-        if (!res.ok) throw new Error(`CMS API returned ${res.status}`);
-        const data = await res.json();
-        const merged = deepMergeStructure(defaultContent, data as Partial<HomepageContent>);
+        const docRef = doc(db, "content", HOMEPAGE_DOC_ID);
+        const docSnap = await getDoc(docRef);
+
+        // Deep-merge stored data over defaults so partial docs don't yield undefined sub-fields
+        const merged = docSnap.exists()
+            ? deepMergeStructure(defaultContent, docSnap.data() as Partial<HomepageContent>)
+            : defaultContent;
         cachedContent = merged;
         lastContentFetch = Date.now();
         return merged;

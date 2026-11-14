@@ -145,12 +145,7 @@ const markdownComponents: Components = {
     ),
     img: ({ src, alt }) => (
         <span className="block my-6">
-            <img
-                src={src}
-                alt={alt || ""}
-                className="max-w-full h-auto rounded-xl border border-border"
-                loading="lazy"
-            />
+            <ProductImage src={src} alt={alt || ""} />
             {alt && (
                 <span className="block text-center text-[12px] text-muted-foreground/50 mt-2 italic">{alt}</span>
             )}
