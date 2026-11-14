@@ -190,9 +190,10 @@ export default function AdminDashboard() {
       const dayEnd = dayStart + 86400000;
       const total = paidOrders
         .filter((o) => {
-          const t = o.createdAt && typeof (o.createdAt as { toDate?: () => Date }).toDate === "function"
-            ? (o.createdAt as { toDate: () => Date }).toDate().getTime()
-            : new Date(o.createdAt as unknown as string).getTime();
+          const createdAt = o.createdAt;
+          const t = createdAt && typeof (createdAt as unknown as { toDate?: () => Date }).toDate === "function"
+            ? (createdAt as unknown as { toDate: () => Date }).toDate().getTime()
+            : new Date(String(createdAt)).getTime();
           return t >= dayStart && t < dayEnd;
         })
         .reduce((s, o) => s + toUSD(o.amount, o.currency, rates), 0);
@@ -214,9 +215,10 @@ export default function AdminDashboard() {
   const activityItems = useMemo(() => {
     const items: { type: string; title: string; time: Date; id: string }[] = [];
     for (const o of orders.slice(0, 4)) {
-      const t = o.createdAt && typeof (o.createdAt as { toDate?: () => Date }).toDate === "function"
-        ? (o.createdAt as { toDate: () => Date }).toDate()
-        : new Date(o.createdAt as unknown as string);
+      const createdAt = o.createdAt;
+      const t = createdAt && typeof (createdAt as unknown as { toDate?: () => Date }).toDate === "function"
+        ? (createdAt as unknown as { toDate: () => Date }).toDate()
+        : new Date(String(createdAt));
       items.push({ type: "order", title: `${o.productName} purchased`, time: t, id: o.id || "" });
     }
     if (products.length > 0) {

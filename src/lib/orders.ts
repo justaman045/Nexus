@@ -1,6 +1,4 @@
-
-import { db } from "./firebase";
-import { collection, getDocs, query, orderBy, Timestamp } from "firebase/firestore";
+import { auth } from "./firebase";
 
 export interface Order {
     id?: string;
@@ -17,7 +15,7 @@ export interface Order {
         email?: string;
         contact?: string;
     };
-    createdAt: Timestamp | string;
+    createdAt: string;
 }
 
 let cachedOrders: Order[] | null = null;
@@ -30,12 +28,16 @@ export async function getOrders(): Promise<Order[]> {
     }
 
     try {
-        const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
-        const querySnapshot = await getDocs(q);
-        const orders = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        } as Order));
+        const user = auth.currentUser;
+        const idToken = user ? await user.getIdToken() : undefined;
+        const headers: Record<string, string> = {};
+        if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+
+        const res = await fetch("/api/orders", { headers });
+        if (!res.ok) throw new Error(`Orders API returned ${res.status}`);
+        const data = await res.json();
+        const orders = (data.orders || []) as Order[];
+
         cachedOrders = orders;
         lastOrdersFetch = Date.now();
         return orders;
