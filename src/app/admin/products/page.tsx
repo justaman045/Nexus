@@ -15,7 +15,7 @@ import {
   ArrowClockwise,
   Star,
 } from "@phosphor-icons/react";
-import { Product, getProducts, deleteProduct, addProduct, updateProduct } from "@/lib/products";
+import { Product, getProducts } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { auth } from "@/lib/firebase";
@@ -93,7 +93,22 @@ export default function AdminProducts() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this product?")) return;
     try {
-      await deleteProduct(id);
+      // Delete via server API route (bypasses Firestore rules via Admin SDK)
+      const user = auth.currentUser;
+      if (!user) {
+          throw new Error("Not authenticated. Please sign in.");
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/products/${id}`, {
+          method: "DELETE",
+          headers: {
+              Authorization: `Bearer ${idToken}`,
+          },
+      });
+      if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "Failed to delete product");
+      }
       await loadData();
     } catch (e) {
       console.error(e);
@@ -151,7 +166,26 @@ export default function AdminProducts() {
     setSyncingId(product.id);
     try {
       const data = await fetchGitHubRepo(parsed.owner, parsed.repo);
-      await updateProduct(product.id, mergeSyncedWithManual(product, data));
+      const merged = mergeSyncedWithManual(product, data);
+      // Update via server API route (bypasses Firestore rules via Admin SDK)
+      const user = auth.currentUser;
+      if (!user) {
+          throw new Error("Not authenticated. Please sign in.");
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch(`/api/products/${product.id}`, {
+          method: "PATCH",
+          headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(merged),
+      });
+      if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || "Sync failed.");
+      }
+      await loadData();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Sync failed.");
     } finally {
@@ -205,7 +239,24 @@ export default function AdminProducts() {
         github: rest.github ?? undefined,
       };
       if (currentProduct.id) {
-        await updateProduct(currentProduct.id, productToSave);
+        // Update via server API route (bypasses Firestore rules via Admin SDK)
+        const user = auth.currentUser;
+        if (!user) {
+            throw new Error("Not authenticated. Please sign in.");
+        }
+        const idToken = await user.getIdToken();
+        const res = await fetch(`/api/products/${currentProduct.id}`, {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(productToSave),
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to update product");
+        }
       } else {
         // Create via server API route (server-authoritative price/gateway enforcement)
         const user = auth.currentUser;
