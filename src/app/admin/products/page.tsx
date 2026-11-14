@@ -117,7 +117,7 @@ export default function AdminProducts() {
   };
 
   const handleOpenAdd = () => {
-    setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
+    setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", images: [], demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
     setGithubInput("");
     setGithubPreview(null);
     setGithubError(null);
@@ -502,6 +502,16 @@ export default function AdminProducts() {
                     <div className="col-span-2">
                       <label className={labelCls}>Cover Image URL</label>
                       <input type="text" value={currentProduct.imageUrl || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, imageUrl: e.target.value })} className={inputCls} placeholder="https://..." />
+                    </div>
+                    <div className="col-span-2">
+                      <label className={labelCls}>Additional Image URLs (one per line)</label>
+                      <textarea
+                        value={Array.isArray(currentProduct.images) ? currentProduct.images.join("\n") : ""}
+                        onChange={(e) => setCurrentProduct({ ...currentProduct, images: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+                        rows={4}
+                        className={inputCls}
+                        placeholder="https://example.com/image1.jpg\nhttps://example.com/image2.jpg"
+                      />
                     </div>
                     <div className="col-span-2">
                       <div className="rounded-2xl border border-white/[0.06] p-5 bg-white/[0.02]">
