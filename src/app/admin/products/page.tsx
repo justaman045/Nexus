@@ -18,6 +18,7 @@ import {
 import { Product, getProducts, deleteProduct, addProduct, updateProduct } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { auth } from "@/lib/firebase";
 import { Glass, inputCls, labelCls, tableHeaderCls, LoadingSkeleton, StatusBadge } from "../_components/shared";
 import {
   parseRepoInput,
@@ -206,7 +207,24 @@ export default function AdminProducts() {
       if (currentProduct.id) {
         await updateProduct(currentProduct.id, productToSave);
       } else {
-        await addProduct(productToSave);
+        // Create via server API route (server-authoritative price/gateway enforcement)
+        const user = auth.currentUser;
+        if (!user) {
+            throw new Error("Not authenticated. Please sign in.");
+        }
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/products", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(productToSave),
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Failed to create product");
+        }
       }
       setIsModalOpen(false);
       await loadData();
