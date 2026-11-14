@@ -14,3 +14,7 @@ export function isAdminEmail(email: string | null | undefined): boolean {
   if (allowlist.length === 0) return true;
   return allowlist.includes(email.toLowerCase());
 }
+
+export function isAdminVerified(email: string | null | undefined, emailVerified: boolean): boolean {
+  return isAdminEmail(email) && emailVerified;
+}

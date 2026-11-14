@@ -16,6 +16,7 @@ import {
   Globe,
   Rocket,
   SignOut,
+  Warning,
 } from "@phosphor-icons/react";
 
 const navItems = [
@@ -37,16 +38,30 @@ const glass = {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user && isAdminEmail(user.email)) {
-        setAuthenticated(true);
+        if (!user.emailVerified) {
+          setAuthenticated(false);
+          setEmailVerified(false);
+          if (pathname !== "/admin/verify" && pathname !== "/admin/login") {
+            router.push("/admin/verify");
+          }
+        } else {
+          setAuthenticated(true);
+          setEmailVerified(true);
+          if (pathname === "/admin/verify") {
+            router.push("/admin/dashboard");
+          }
+        }
       } else {
         if (user) signOut(auth).catch(() => {});
         setAuthenticated(false);
+        setEmailVerified(false);
         if (pathname !== "/admin/login") router.push("/admin/login");
       }
       setLoading(false);
@@ -72,6 +87,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         >
           <Rocket size={18} weight="fill" style={{ color: "rgba(255,255,255,0.6)" }} />
         </motion.div>
+      </div>
+    );
+  }
+
+  // Admin email matched but email not yet verified — require verification
+  if (!authenticated && emailVerified === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#05050f" }}>
+        <div className="text-center">
+          <Warning size={48} className="text-amber-500 mb-6" />
+          <h2 className="text-white text-xl font-bold mb-2">Account Verification Required</h2>
+          <p className="text-white/40 mb-6">
+            Your email is registered as an admin but has not been verified. Please verify your email before accessing the admin console.
+          </p>
+          <button
+            onClick={() => router.push("/admin/verify")}
+            className="flex items-center justify-center gap-2 font-bold text-[13px] px-5 py-2.5 rounded-xl transition-all active:scale-[0.98] text-white"
+            style={{ background: "linear-gradient(135deg, #6366f1, #a855f7)", boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}
+          >
+            Go to Verify Page
+          </button>
+        </div>
       </div>
     );
   }
