@@ -156,6 +156,7 @@ export default function ProductsPage() {
 
 function ProductCard({ product, index }: { product: Product; index: number }) {
     const { format: formatCurrency } = useCurrency();
+    const [imageFailed, setImageFailed] = useState(false);
     return (
         <motion.div
             initial={{ opacity: 0, y: 32 }}
@@ -166,11 +167,14 @@ function ProductCard({ product, index }: { product: Product; index: number }) {
             <Link href={`/products/${product.id}`} className="block">
                 {/* Image */}
                 <div className="relative aspect-[3/2] rounded-[20px] overflow-hidden bg-secondary/30 border border-border mb-5">
-                    {product.imageUrl ? (
+                    {!imageFailed && product.imageUrl ? (
                         <img
                             src={product.imageUrl}
                             alt={product.name}
                             className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-[2s] ease-out"
+                            loading="lazy"
+                            decoding="async"
+                            onError={() => setImageFailed(true)}
                         />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center">
