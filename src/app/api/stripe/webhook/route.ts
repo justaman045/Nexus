@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";

@@ -15,8 +15,6 @@ import {
   Copy,
   Check,
 } from "@phosphor-icons/react";
-import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { currencyDecimals } from "@/lib/currency";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -118,9 +116,12 @@ function OrderHistoryContent() {
     setHasSearched(true);
     setOrders([]);
     try {
-      const q = query(collection(db, "orders"), where("customerInfo.email", "==", emailTrimmed));
-      const snap = await getDocs(q);
-      const found = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Order));
+      // Orders are not client-readable (Firestore rules) — use the email-scoped
+      // server route instead.
+      const res = await fetch(`/api/orders/lookup?email=${encodeURIComponent(emailTrimmed)}`);
+      if (!res.ok) throw new Error(`Order lookup returned ${res.status}`);
+      const data = (await res.json()) as { orders?: Order[] };
+      const found = data.orders ?? [];
       found.sort((a, b) => asDate(b.createdAt).getTime() - asDate(a.createdAt).getTime());
       setOrders(found);
     } catch (e) {
@@ -242,7 +243,7 @@ function OrderHistoryContent() {
               </motion.div>
             )}
 
-            {orders.map((order, i) => (
+            {orders.map((order) => (
               <button
                 key={order.id}
                 type="button"

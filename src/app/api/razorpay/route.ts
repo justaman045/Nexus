@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";
 import { getPaymentSettings } from "@/lib/paymentSettings";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export async function OPTIONS(req: Request) {
@@ -12,6 +12,15 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "razorpay:create", limit: 20, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
 
   if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
     return corsResponse(
@@ -42,9 +51,16 @@ export async function POST(req: Request) {
     if (!productSnap.exists) {
       return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
-    const product = productSnap.data() as { price?: number; name?: string } | undefined;
-    const usdPrice = typeof product?.price === "number" ? product.price : 0;
-    if (usdPrice <= 0) {
+    const product = productSnap.data() as { price?: number; name?: string; status?: string } | undefined;
+    if (!product) {
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
+    }
+    // Only live products are purchasable (drafts/archived are hidden).
+    if ((product.status ?? "draft") !== "live") {
+      return corsResponse({ error: "Product is not available" }, { status: 404 }, origin);
+    }
+    const usdPrice = typeof product.price === "number" ? product.price : 0;
+    if (!Number.isFinite(usdPrice) || usdPrice <= 0) {
       return corsResponse({ error: "Product has no price" }, { status: 400 }, origin);
     }
 

@@ -1,22 +1,12 @@
-import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase";
-import { MOCK_PRODUCTS } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
-import { verifyIdToken, type FirebaseUserClaims } from "@/lib/server/verifyIdToken";
+import { verifyAdminRequest, tryAdminRequest } from "@/lib/server/adminAuth";
+import { jsonSafe } from "@/lib/server/jsonSafe";
+import { toPublicProduct } from "@/lib/server/productProjection";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
-/** Convert Firestore Timestamp values to ISO strings so the response is JSON-safe. */
-function jsonSafe(value: unknown): unknown {
-  if (value && typeof value === "object") {
-    if (Array.isArray(value)) return value.map(jsonSafe);
-    const maybeTs = value as { toDate?: () => Date };
-    if (typeof maybeTs.toDate === "function") return maybeTs.toDate().toISOString();
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = jsonSafe(v);
-    return out;
-  }
-  return value;
-}
+export const dynamic = "force-dynamic";
 
 type ProductStatus = "live" | "upcoming" | "draft" | "archived";
 
@@ -25,36 +15,7 @@ interface ProductItem {
   [key: string]: unknown;
 }
 
-/** Verify admin auth from Authorization header. Returns { claims, error }. */
-async function assertAdminAuth(req: Request): Promise<{ claims?: FirebaseUserClaims; error?: { status: number; message: string } }> {
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token) {
-    return { error: { status: 401, message: "Unauthorized" } };
-  }
-
-  const getProjectId = (): string => {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
-    const parsed = JSON.parse(raw) as { project_id?: string };
-    if (!parsed.project_id) throw new Error("FIREBASE_SERVICE_ACCOUNT missing project_id");
-    return parsed.project_id;
-  };
-
-  const projectId = getProjectId();
-  const claims = await verifyIdToken(token, projectId);
-  const email = (claims.email || "").toLowerCase();
-  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (allowlist.length === 0 || !claims.emailVerified || !allowlist.includes(email)) {
-    return { error: { status: 403, message: "Forbidden" } };
-  }
-  return { claims };
-}
-
-export const revalidate = 60;
+const PRODUCT_STATUSES: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin") || null;
@@ -63,26 +24,26 @@ export async function OPTIONS(req: Request) {
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const statusFilter = searchParams.get("status") as ProductStatus | null;
+  const statusParam = searchParams.get("status");
   const categoryFilter = searchParams.get("category") || null;
   const sortBy = searchParams.get("sort") || "purchases";
-  const limit = parseInt(searchParams.get("limit") || "0", 10);
+  const limit = Number.parseInt(searchParams.get("limit") || "0", 10);
+
+  // Valid admin tokens see drafts/archived and paid fields; everyone else gets
+  // the public catalogue (live products, no download links).
+  const admin = await tryAdminRequest(req);
 
   let products: ProductItem[] = [];
-
   try {
     const db = getDb();
     const snapshot = await db.collection("products").get();
-    if (snapshot.empty) {
-      products = MOCK_PRODUCTS.map((p) => ({ ...p, id: p.id } as ProductItem));
-    } else {
-      products = snapshot.docs.map((doc) => ({
-        ...((jsonSafe(doc.data()) as Record<string, unknown>) ?? {}),
-        id: doc.id,
-      })) as ProductItem[];
-    }
-  } catch {
-    products = MOCK_PRODUCTS.map((p) => ({ ...p, id: p.id } as ProductItem));
+    products = snapshot.docs.map((doc) => ({
+      ...((jsonSafe(doc.data()) as Record<string, unknown>) ?? {}),
+      id: doc.id,
+    })) as ProductItem[];
+  } catch (error) {
+    console.error("Error reading products:", error instanceof Error ? error.message : error);
+    products = [];
   }
 
   const normalised = products.map((p) => ({
@@ -91,9 +52,16 @@ export async function GET(req: Request) {
   })) as ProductItem[];
 
   let filtered = normalised;
-  if (statusFilter) {
-    filtered = filtered.filter((p) => p.status === statusFilter);
+
+  if (admin) {
+    if (statusParam && PRODUCT_STATUSES.includes(statusParam as ProductStatus)) {
+      filtered = filtered.filter((p) => p.status === statusParam);
+    }
+  } else {
+    // Public callers always get live products only — never drafts.
+    filtered = filtered.filter((p) => p.status === "live");
   }
+
   if (categoryFilter) {
     filtered = filtered.filter((p) => String(p.category) === categoryFilter);
   }
@@ -138,48 +106,45 @@ export async function GET(req: Request) {
     total: normalised.length,
   };
 
+  const output = admin ? filtered : filtered.map(toPublicProduct);
+  const cacheControl = admin
+    ? "private, no-store, max-age=0"
+    : "public, s-maxage=60, stale-while-revalidate=120";
+
   const origin = req.headers.get("origin") || null;
   return corsResponse(
-    { products: filtered, categories, summary },
-    { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } },
+    { products: output, categories, summary },
+    { headers: { "Cache-Control": cacheControl } },
     origin
   );
 }
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "products:create", limit: 30, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
+
   try {
-    const authHeader = req.headers.get("authorization") || "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-    if (!token) {
-      const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Unauthorized" }, { status: 401 }, origin);
-    }
-
-    const { verifyIdToken: verifyIdTokenFn } = await import("@/lib/server/verifyIdToken");
-    const getProjectId = (): string => {
-      const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-      if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
-      const parsed = JSON.parse(raw) as { project_id?: string };
-      if (!parsed.project_id) throw new Error("FIREBASE_SERVICE_ACCOUNT missing project_id");
-      return parsed.project_id;
-    };
-
-    const projectId = getProjectId();
-    const claims = await verifyIdTokenFn(token, projectId);
-    const email = (claims.email || "").toLowerCase();
-    const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter(Boolean);
-    if (allowlist.length === 0 || !claims.emailVerified || !allowlist.includes(email)) {
-      const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Forbidden" }, { status: 403 }, origin);
+    const authResult = await verifyAdminRequest(req);
+    if (authResult.error) {
+      return corsResponse(
+        { error: authResult.error.message },
+        { status: authResult.error.status },
+        origin
+      );
     }
 
     const body = await req.json();
-    // Support both schema conventions:
-    // Our app: name, price, imageUrl, demoUrl, description, features
-    // Other app: title, pricing, websiteUrl, shortDescription, techStack
+    // Accept both schema conventions:
+    // Nexus: name, price, imageUrl, demoUrl, description, features
+    // Companion app: title, pricing, websiteUrl, shortDescription, techStack
     const {
       name,
       title,
@@ -201,52 +166,57 @@ export async function POST(req: Request) {
       repoUrl,
       status,
       images,
+      github,
     } = body ?? {};
 
-    // Log incoming image data for debugging
-    console.log(`[products API] Received product: name="${name || title}", imageUrl="${imageUrl}", images=${JSON.stringify(images)}, features=${JSON.stringify(features)}, techStack=${JSON.stringify(techStack)}`);
-
-    // Normalize fields: accept either naming convention
     const finalName = (name || title || "").trim();
     const finalDescription = description || shortDescription || "";
     const finalPrice = typeof price === "number" ? price : typeof pricing === "number" ? pricing : undefined;
     const finalCategory = category || "";
-    const finalImageUrl = imageUrl || "";
-    const finalImages = Array.isArray(images) ? images : [];
+    const finalImages = Array.isArray(images)
+      ? images.filter((img): img is string => typeof img === "string" && img.trim() !== "")
+      : [];
     const finalFeatures = Array.isArray(features) ? features : Array.isArray(techStack) ? techStack : [];
     const finalDemoUrl = demoUrl || websiteUrl || undefined;
     const finalVersion = version || undefined;
     const finalDownloadUrl = downloadUrl || undefined;
     const finalDocumentationUrl = documentationUrl || undefined;
     const finalLongDescription = longDescription || "";
-    const finalDescriptionType = descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html" ? descriptionType : "plain";
+    const finalDescriptionType =
+      descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html"
+        ? descriptionType
+        : "plain";
     const finalRepoUrl = repoUrl || undefined;
-    const finalStatus = status && ["live", "upcoming", "draft", "archived"].includes(status) ? status : "draft";
+    const finalStatus =
+      typeof status === "string" && PRODUCT_STATUSES.includes(status as ProductStatus)
+        ? (status as ProductStatus)
+        : "draft";
 
     if (!finalName) {
-      const origin = req.headers.get("origin") || null;
       return corsResponse({ error: "Product name (or title) is required" }, { status: 400 }, origin);
     }
-    if (typeof finalPrice !== "number" || finalPrice < 0) {
-      const origin = req.headers.get("origin") || null;
+    if (typeof finalPrice !== "number" || !Number.isFinite(finalPrice) || finalPrice < 0) {
       return corsResponse({ error: "Valid price (or pricing) is required" }, { status: 400 }, origin);
     }
-    if (!finalCategory) {
-      const origin = req.headers.get("origin") || null;
+    if (!finalCategory || typeof finalCategory !== "string") {
       return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
 
-    // Validate imageUrl if provided
+    // Validate the cover image; fall back to the first gallery image.
     let validatedImageUrl = "";
     if (typeof imageUrl === "string" && imageUrl.trim() !== "") {
       try {
-        new URL(imageUrl);
-        validatedImageUrl = imageUrl;
+        validatedImageUrl = new URL(imageUrl).toString();
       } catch {
-        // Invalid URL — store as empty
-        console.warn(`[products API] Invalid imageUrl: "${imageUrl}"`);
+        console.warn("[products API] Ignoring invalid imageUrl");
       }
     }
+    const finalImageUrl = validatedImageUrl || finalImages[0] || "";
+    if (github !== undefined && github !== null && (typeof github !== "object" || Array.isArray(github))) {
+      return corsResponse({ error: "github must be an object" }, { status: 400 }, origin);
+    }
+    const finalGithub =
+      github && typeof github === "object" && !Array.isArray(github) ? github : undefined;
 
     const db = getDb();
     const newProduct: Record<string, unknown> = {
@@ -260,10 +230,11 @@ export async function POST(req: Request) {
       demoUrl: finalDemoUrl,
       version: finalVersion,
       downloadUrl: finalDownloadUrl,
-      documentationUrl: finalDocumentationUrl || undefined,
+      documentationUrl: finalDocumentationUrl,
       longDescription: finalLongDescription,
       descriptionType: finalDescriptionType,
       repoUrl: finalRepoUrl,
+      github: finalGithub,
       status: finalStatus,
       purchases: 0,
       createdAt: new Date().toISOString(),
@@ -273,23 +244,12 @@ export async function POST(req: Request) {
       Object.entries(newProduct).filter(([, v]) => v !== undefined)
     ) as Record<string, unknown>;
 
-    console.log(`[products API] Storing product: name="${finalName}", imageUrl="${clean.imageUrl}", images=${JSON.stringify(clean.images)}`);
-
     const docRef = await db.collection("products").add(clean);
 
-    const origin = req.headers.get("origin") || null;
-    return corsResponse(
-      {
-        id: docRef.id,
-        ...clean,
-      },
-      {},
-      origin
-    );
+    return corsResponse({ id: docRef.id, ...clean }, {}, origin);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error creating product:", message);
-    const origin = req.headers.get("origin") || null;
     return corsResponse(
       { error: "Failed to create product", ...(process.env.NODE_ENV === "development" ? { details: message } : {}) },
       { status: 500 },

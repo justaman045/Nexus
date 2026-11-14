@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 interface ProductImageProps {
     src?: string | Blob | undefined | null;
@@ -12,10 +12,149 @@ interface ProductImageProps {
     isGallery?: boolean;
 }
 
+function letterPlaceholder(alt: string) {
+    return alt ? alt.trim().charAt(0).toUpperCase() : "?";
+}
+
+/** Normalised gallery: cover image first, empty entries removed. */
+function buildGallery(src: ProductImageProps["src"], images?: string[]): string[] {
+    const list = (images ?? []).filter(
+        (img): img is string => typeof img === "string" && img.trim() !== ""
+    );
+    if (typeof src === "string" && src.trim() !== "" && !list.includes(src)) {
+        return [src, ...list];
+    }
+    return list;
+}
+
+function LetterFallback({ alt, fallbackClassName }: { alt: string; fallbackClassName: string }) {
+    return (
+        <div className={`flex items-center justify-center ${fallbackClassName}`}>
+            <span className="text-5xl font-bold text-foreground/10">{letterPlaceholder(alt)}</span>
+        </div>
+    );
+}
+
+/** Non-gallery image with a single fallback state. */
+function SingleImage({
+    resolvedSrc,
+    alt,
+    className,
+    fallbackClassName,
+    onError,
+}: {
+    resolvedSrc: string;
+    alt: string;
+    className: string;
+    fallbackClassName: string;
+    onError?: (error: string | null) => void;
+}) {
+    const [failed, setFailed] = useState(false);
+
+    if (!resolvedSrc || failed) {
+        return <LetterFallback alt={alt} fallbackClassName={fallbackClassName} />;
+    }
+
+    return (
+        <img
+            src={resolvedSrc}
+            alt={alt}
+            className={className}
+            loading="lazy"
+            decoding="async"
+            onError={() => {
+                setFailed(true);
+                onError?.(`Image failed to load: ${resolvedSrc}`);
+            }}
+        />
+    );
+}
+
+/**
+ * Interactive gallery. Rendered with a `key` derived from the image list so
+ * selection/failure state resets naturally when the product changes — no
+ * setState-inside-effect required.
+ */
+function Gallery({
+    gallery,
+    alt,
+    onError,
+}: {
+    gallery: string[];
+    alt: string;
+    onError?: (error: string | null) => void;
+}) {
+    const [selected, setSelected] = useState(0);
+    const [failed, setFailed] = useState<Set<number>>(new Set());
+
+    const markFailed = (index: number, value: string) => {
+        setFailed((prev) => {
+            if (prev.has(index)) return prev;
+            const next = new Set(prev);
+            next.add(index);
+            return next;
+        });
+        onError?.(`Image failed to load: ${value}`);
+    };
+
+    const safeIndex = Math.min(selected, gallery.length - 1);
+    const current = gallery[safeIndex] ?? "";
+    const currentFailed = failed.has(safeIndex);
+
+    return (
+        <div className="flex flex-col gap-2">
+            <div className="relative aspect-video rounded-xl overflow-hidden bg-secondary/30 border border-border">
+                {current && !currentFailed ? (
+                    <img
+                        src={current}
+                        alt={alt}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                        onError={() => markFailed(safeIndex, current)}
+                    />
+                ) : (
+                    <LetterFallback alt={alt} fallbackClassName="h-full" />
+                )}
+            </div>
+            {gallery.length > 1 && (
+                <div className="grid grid-cols-4 gap-2">
+                    {gallery.map((img, idx) =>
+                        failed.has(idx) ? null : (
+                            <button
+                                type="button"
+                                key={`${img}-${idx}`}
+                                onClick={() => setSelected(idx)}
+                                aria-label={`View image ${idx + 1} of ${alt}`}
+                                aria-pressed={idx === safeIndex}
+                                className={`rounded-lg overflow-hidden border transition-all ${
+                                    idx === safeIndex
+                                        ? "border-indigo-400/70 ring-2 ring-indigo-500/20"
+                                        : "border-border hover:opacity-80"
+                                }`}
+                            >
+                                <img
+                                    src={img}
+                                    alt={`${alt} view ${idx + 1}`}
+                                    className="w-full h-16 object-cover"
+                                    loading="lazy"
+                                    decoding="async"
+                                    onError={() => markFailed(idx, img)}
+                                />
+                            </button>
+                        )
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 /**
  * Robust image component that handles broken/empty image URLs gracefully.
  * Falls back to images[0] when src is empty, then to a letter placeholder.
- * Supports gallery mode to show multiple images.
+ * In gallery mode the thumbnails are interactive and individual broken images
+ * are dropped instead of breaking the whole gallery.
  */
 export function ProductImage({
     src,
@@ -26,76 +165,24 @@ export function ProductImage({
     onError,
     isGallery = false,
 }: ProductImageProps) {
-    const [failed, setFailed] = useState(false);
+    const gallery = useMemo(() => buildGallery(src, images), [src, images]);
+    const galleryKey = gallery.join("|");
 
-    // Determine the best source: src prop first, then images[0], then empty
+    if (isGallery && gallery.length > 0) {
+        return <Gallery key={galleryKey} gallery={gallery} alt={alt} onError={onError} />;
+    }
+
     const resolvedSrc =
-        typeof src === "string" && src.trim() !== ""
-            ? src
-            : images?.[0] ?? "";
-
-    const srcStr = resolvedSrc;
-    const hasSrc = Boolean(srcStr) && srcStr.trim() !== "";
-
-    const handleError = () => {
-        setFailed(true);
-        if (onError) {
-            onError(`Image failed to load: ${srcStr}`);
-        }
-        console.error(`[ProductImage] Failed to load image: "${srcStr}" for alt="${alt}"`);
-    };
-
-    // Gallery mode: show all images
-    if (isGallery && images && images.length > 0) {
-        return (
-            <div className="flex flex-col gap-2">
-                <div className="relative aspect-video rounded-xl overflow-hidden bg-secondary/30 border border-border">
-                    <img
-                        src={srcStr || images[0]}
-                        alt={alt}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                        decoding="async"
-                        onError={handleError}
-                    />
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                    {images.map((img, idx) => (
-                        <img
-                            key={idx}
-                            src={img}
-                            alt={`${alt} ${idx + 1}`}
-                            className="w-full h-16 object-cover cursor-pointer hover:opacity-80 transition-opacity border border-border"
-                            onClick={() => {
-                                // Could add modal here
-                            }}
-                        />
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
-    if (!hasSrc || failed) {
-        const initial = alt ? alt.trim().charAt(0).toUpperCase() : "?";
-        if (!hasSrc) {
-            console.warn(`[ProductImage] No image URL provided for product: "${alt}"`);
-        }
-        return (
-            <div className={`flex items-center justify-center ${fallbackClassName}`}>
-                <span className="text-5xl font-bold text-foreground/10">{initial}</span>
-            </div>
-        );
-    }
+        typeof src === "string" && src.trim() !== "" ? src : images?.[0] ?? "";
 
     return (
-        <img
-            src={srcStr}
+        <SingleImage
+            key={resolvedSrc}
+            resolvedSrc={resolvedSrc}
             alt={alt}
             className={className}
-            loading="lazy"
-            decoding="async"
-            onError={handleError}
+            fallbackClassName={fallbackClassName}
+            onError={onError}
         />
     );
 }

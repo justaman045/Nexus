@@ -15,7 +15,7 @@ import {
   ArrowClockwise,
   Star,
 } from "@phosphor-icons/react";
-import { Product, getProducts } from "@/lib/products";
+import { Product, getAdminProducts, clearProductsCache } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { auth } from "@/lib/firebase";
@@ -77,7 +77,7 @@ export default function AdminProducts() {
   async function loadData() {
     setIsLoading(true);
     try {
-      const [productsData, contentData] = await Promise.all([getProducts(), getHomepageContent()]);
+      const [productsData, contentData] = await Promise.all([getAdminProducts(), getHomepageContent()]);
       setProducts(productsData);
       const cmsCats = contentData.categories?.length ? contentData.categories : [];
       const usedCats = [...new Set(productsData.map((p) => p.category).filter(Boolean))];
@@ -109,6 +109,7 @@ export default function AdminProducts() {
           const error = await res.json();
           throw new Error(error.error || "Failed to delete product");
       }
+      clearProductsCache();
       await loadData();
     } catch (e) {
       console.error(e);
@@ -117,7 +118,7 @@ export default function AdminProducts() {
   };
 
   const handleOpenAdd = () => {
-    setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", images: [], demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [] });
+    setCurrentProduct({ name: "", description: "", longDescription: "", descriptionType: "plain", price: 0, imageUrl: "", images: [], demoUrl: "", version: "", downloadUrl: "", documentationUrl: "", category: categories[0] || "", features: [], status: "draft" });
     setGithubInput("");
     setGithubPreview(null);
     setGithubError(null);
@@ -220,8 +221,8 @@ export default function AdminProducts() {
     try {
       const { id, purchases, createdAt, ...rest } = currentProduct;
       void id; void purchases; void createdAt;
-      // Strip undefined fields — Firestore Web SDK rejects `undefined` values
-      // synchronously in setDoc/addDoc. Normalise optionals to "" / [] / null.
+      // Build the payload for the server API route. Optional fields are left
+      // undefined and omitted by JSON.stringify; the server normalises them.
       const productToSave = {
         name: rest.name || "",
         description: rest.description || "",
@@ -238,6 +239,7 @@ export default function AdminProducts() {
         features: rest.features?.map((f) => f.trim()).filter(Boolean) || [],
         repoUrl: rest.repoUrl ?? undefined,
         github: rest.github ?? undefined,
+        status: rest.status ?? "draft",
       };
       if (currentProduct.id) {
         // Update via server API route (bypasses Firestore rules via Admin SDK)
@@ -278,6 +280,7 @@ export default function AdminProducts() {
             throw new Error(error.error || "Failed to create product");
         }
       }
+      clearProductsCache();
       setIsModalOpen(false);
       await loadData();
     } catch (e) {
@@ -408,7 +411,7 @@ export default function AdminProducts() {
                     <span className="text-white text-[14px] font-bold">{formatCurrency(product.price)}</span>
                   </td>
                   <td className="px-8 py-5">
-                    <StatusBadge status={product.purchases > 0 ? "active" : "draft"} glow />
+                    <StatusBadge status={product.status ?? "draft"} glow />
                   </td>
                   <td className="px-8 py-5">
                     <div className="flex justify-end gap-2">
@@ -497,6 +500,19 @@ export default function AdminProducts() {
                       <label className={labelCls}>Category</label>
                       <select value={currentProduct.category || ""} onChange={(e) => setCurrentProduct({ ...currentProduct, category: e.target.value })} className={inputCls + " appearance-none"}>
                         {categories.map((cat) => (<option key={cat} value={cat} className="bg-[#0a0a0a]">{cat}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Status</label>
+                      <select
+                        value={currentProduct.status ?? "draft"}
+                        onChange={(e) => setCurrentProduct({ ...currentProduct, status: e.target.value as Product["status"] })}
+                        className={inputCls + " appearance-none"}
+                      >
+                        <option value="live" className="bg-[#0a0a0a]">Live — visible in the store</option>
+                        <option value="upcoming" className="bg-[#0a0a0a]">Upcoming</option>
+                        <option value="draft" className="bg-[#0a0a0a]">Draft — hidden</option>
+                        <option value="archived" className="bg-[#0a0a0a]">Archived — hidden</option>
                       </select>
                     </div>
                     <div className="col-span-2">

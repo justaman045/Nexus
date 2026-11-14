@@ -45,10 +45,14 @@ export function LoadingSkeleton({ rows = 5, cols = 5 }: { rows?: number; cols?: 
 
 export function StatusBadge({ status, glow = false }: { status: string; glow?: boolean }) {
   const config: Record<string, { bg: string; text: string; border: string; label: string }> = {
-    active:  { bg: "bg-emerald-500/[0.08]", text: "text-emerald-400/70", border: "border-emerald-500/[0.1]", label: "Active" },
-    paid:    { bg: "bg-emerald-500/[0.08]", text: "text-emerald-400/70", border: "border-emerald-500/[0.1]", label: "Paid" },
-    pending: { bg: "bg-amber-500/[0.08]",   text: "text-amber-400/70",   border: "border-amber-500/[0.1]",   label: "Pending" },
-    failed:  { bg: "bg-red-500/[0.08]",      text: "text-red-400/70",     border: "border-red-500/[0.1]",     label: "Failed" },
+    active:   { bg: "bg-emerald-500/[0.08]", text: "text-emerald-400/70", border: "border-emerald-500/[0.1]", label: "Active" },
+    live:     { bg: "bg-emerald-500/[0.08]", text: "text-emerald-400/70", border: "border-emerald-500/[0.1]", label: "Live" },
+    paid:     { bg: "bg-emerald-500/[0.08]", text: "text-emerald-400/70", border: "border-emerald-500/[0.1]", label: "Paid" },
+    upcoming: { bg: "bg-indigo-500/[0.08]",  text: "text-indigo-400/70",  border: "border-indigo-500/[0.1]",  label: "Upcoming" },
+    pending:  { bg: "bg-amber-500/[0.08]",   text: "text-amber-400/70",   border: "border-amber-500/[0.1]",   label: "Pending" },
+    draft:    { bg: "bg-white/[0.04]",       text: "text-white/40",      border: "border-white/[0.06]",      label: "Draft" },
+    archived: { bg: "bg-white/[0.03]",       text: "text-white/25",      border: "border-white/[0.05]",      label: "Archived" },
+    failed:   { bg: "bg-red-500/[0.08]",     text: "text-red-400/70",    border: "border-red-500/[0.1]",     label: "Failed" },
   };
   const c = config[status] || { bg: "bg-white/[0.04]", text: "text-white/40", border: "border-white/[0.06]", label: status };
   return (

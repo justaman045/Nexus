@@ -1,7 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { NextRequest } from "next/server";
 import { parseRepoInput, mergeSyncedWithManual } from "@/lib/github";
-import { GitHubFetchError, fetchGitHubRepoServer } from "@/lib/server/githubFetch";
+import { fetchGitHubRepoServer } from "@/lib/server/githubFetch";
 import { getDb } from "@/lib/server/firebase";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 

@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import { verifyRazorpaySignature } from "@/lib/razorpaySig";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 function cleanCustomerInfo(value: unknown) {
@@ -23,6 +23,15 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "razorpay:verify", limit: 30, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
 
   try {
     const body = await req.json();

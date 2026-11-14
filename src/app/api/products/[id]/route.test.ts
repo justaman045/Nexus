@@ -86,7 +86,7 @@ describe("GET /api/products/[id]", () => {
         expect(body.error).toBe("Product not found");
     });
 
-    it("treats missing status as draft", async () => {
+    it("hides a product with no status (treated as draft) from the public", async () => {
         mockDocs["p1"] = { name: "No Status", price: 10, category: "Design", createdAt: "2023-01-01T00:00:00Z" };
 
         const res = await GET(new Request("http://localhost/api/products/p1"), {
@@ -94,7 +94,49 @@ describe("GET /api/products/[id]", () => {
         });
         const body = await res.json();
 
+        expect(res.status).toBe(404);
+        expect(body.error).toBe("Product not found");
+    });
+
+    it("returns draft products to admins", async () => {
+        mockDocs["p1"] = { name: "Draft", price: 10, category: "Design", status: "draft" };
+        const { verifyIdToken } = await import("@/lib/server/verifyIdToken");
+        vi.mocked(verifyIdToken).mockResolvedValue({
+            uid: "admin-uid",
+            email: "developerlife69@gmail.com",
+            emailVerified: true,
+        });
+        process.env.FIREBASE_SERVICE_ACCOUNT = JSON.stringify({ project_id: "test-project" });
+        process.env.NEXT_PUBLIC_ADMIN_EMAILS = "developerlife69@gmail.com";
+
+        const res = await GET(
+            new Request("http://localhost/api/products/p1", {
+                headers: { authorization: "Bearer admin-token" },
+            }),
+            { params: { id: "p1" } as unknown as Promise<{ id: string }> }
+        );
+        const body = await res.json();
+
         expect(res.status).toBe(200);
         expect(body.status).toBe("draft");
+    });
+
+    it("never exposes download links to public callers", async () => {
+        mockDocs["p1"] = {
+            name: "Live",
+            price: 10,
+            category: "Design",
+            status: "live",
+            downloadUrl: "https://example.com/secret.zip",
+            repoUrl: "https://github.com/owner/private",
+        };
+
+        const res = await GET(new Request("http://localhost/api/products/p1"), {
+            params: { id: "p1" } as unknown as Promise<{ id: string }>,
+        });
+        const body = await res.json();
+
+        expect(body.downloadUrl).toBeUndefined();
+        expect(body.repoUrl).toBeUndefined();
     });
 });

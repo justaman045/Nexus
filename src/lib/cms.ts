@@ -1,5 +1,5 @@
-import { db } from "./firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { auth, db } from "./firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 export interface HeroSection {
     badge: string;
@@ -168,14 +168,25 @@ function deepMergeStructure<T>(base: T, partial: unknown): T {
 }
 
 export async function updateHomepageContent(data: Partial<HomepageContent>) {
-    try {
-        const docRef = doc(db, "content", HOMEPAGE_DOC_ID);
-        // Use setDoc with merge: true to create if not exists or update fields
-        await setDoc(docRef, data, { merge: true });
-        cachedContent = null;
-        return true;
-    } catch (error) {
-        console.error("Error updating homepage content:", error);
-        throw error;
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated. Please sign in.");
+    const idToken = await user.getIdToken();
+
+    const res = await fetch("/api/cms", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(data),
+    });
+
+    if (!res.ok) {
+        const error = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(error.error || "Failed to update homepage content");
     }
+
+    cachedContent = null;
+    lastContentFetch = 0;
+    return true;
 }

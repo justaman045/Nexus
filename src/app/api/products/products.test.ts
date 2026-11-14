@@ -111,17 +111,59 @@ describe("GET /api/products", () => {
         expect(body.summary).toEqual({ live: 1, upcoming: 0, draft: 0, archived: 0, total: 1 });
     });
 
-    it("treats missing status as draft", async () => {
+    it("treats missing status as draft (admin view)", async () => {
         mockDocs.push({
             id: "p1",
             data: { name: "No Status", price: 10, category: "Design", createdAt: "2023-01-01T00:00:00Z" },
+        });
+        vi.mocked(verifyIdToken).mockResolvedValue(ADMIN_CLAIMS);
+
+        const res = await GET(
+            new Request("http://localhost/api/products", {
+                headers: { authorization: `Bearer ${ADMIN_TOKEN}` },
+            })
+        );
+        const body = await res.json();
+
+        expect(body.products[0].status).toBe("draft");
+        expect(body.summary.draft).toBe(1);
+    });
+
+    it("hides non-live products from public callers", async () => {
+        mockDocs.push(
+            { id: "p1", data: { name: "Live", price: 10, category: "A", status: "live", createdAt: "2023-01-01T00:00:00Z" } },
+            { id: "p2", data: { name: "Draft", price: 20, category: "A", status: "draft", createdAt: "2023-01-01T00:00:00Z" } },
+            { id: "p3", data: { name: "Archived", price: 30, category: "A", status: "archived", createdAt: "2023-01-01T00:00:00Z" } }
+        );
+
+        const res = await GET(new Request("http://localhost/api/products"));
+        const body = await res.json();
+
+        expect(body.products).toHaveLength(1);
+        expect(body.products[0].name).toBe("Live");
+        // Summary still describes the whole catalogue.
+        expect(body.summary).toEqual({ live: 1, upcoming: 0, draft: 1, archived: 1, total: 3 });
+    });
+
+    it("never exposes download links to public callers", async () => {
+        mockDocs.push({
+            id: "p1",
+            data: {
+                name: "Live",
+                price: 10,
+                category: "A",
+                status: "live",
+                downloadUrl: "https://example.com/secret.zip",
+                repoUrl: "https://github.com/owner/private",
+                createdAt: "2023-01-01T00:00:00Z",
+            },
         });
 
         const res = await GET(new Request("http://localhost/api/products"));
         const body = await res.json();
 
-        expect(body.products[0].status).toBe("draft");
-        expect(body.summary.draft).toBe(1);
+        expect(body.products[0].downloadUrl).toBeUndefined();
+        expect(body.products[0].repoUrl).toBeUndefined();
     });
 
     it("filters by status=live", async () => {
@@ -289,7 +331,6 @@ describe("POST /api/products", () => {
         });
 
         const res = await POST(req);
-        const body = await res.json();
 
         expect(res.status).toBe(403);
     });
@@ -311,9 +352,46 @@ describe("POST /api/products", () => {
         });
 
         const res = await POST(req);
-        const body = await res.json();
 
         expect(res.status).toBe(403);
+    });
+
+    it("accepts the companion app schema (title/pricing/websiteUrl/techStack)", async () => {
+        vi.mocked(verifyIdToken).mockResolvedValue(ADMIN_CLAIMS);
+
+        const req = new Request("http://localhost/api/products", {
+            method: "POST",
+            headers: {
+                authorization: `Bearer ${ADMIN_TOKEN}`,
+                "content-type": "application/json",
+            },
+            body: JSON.stringify({
+                title: "Companion Product",
+                pricing: 15,
+                shortDescription: "Created by the companion app",
+                websiteUrl: "https://example.com",
+                techStack: ["Next.js", "Firebase"],
+                category: "Mobile App",
+                images: ["https://example.com/one.png", "https://example.com/two.png"],
+                status: "live",
+            }),
+        });
+
+        const res = await POST(req);
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.name).toBe("Companion Product");
+        expect(body.description).toBe("Created by the companion app");
+        expect(body.price).toBe(15);
+        expect(body.demoUrl).toBe("https://example.com");
+        expect(body.features).toEqual(["Next.js", "Firebase"]);
+        // Cover image falls back to the first gallery image.
+        expect(body.imageUrl).toBe("https://example.com/one.png");
+        expect(body.images).toEqual([
+            "https://example.com/one.png",
+            "https://example.com/two.png",
+        ]);
     });
 
     it("rejects missing product name", async () => {

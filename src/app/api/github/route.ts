@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { GitHubFetchError, fetchGitHubRepoServer } from "@/lib/server/githubFetch";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export async function OPTIONS(req: NextRequest) {
@@ -9,6 +10,16 @@ export async function OPTIONS(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "github:fetch", limit: 30, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
+
   const { searchParams } = req.nextUrl;
   const owner = searchParams.get("owner")?.trim() ?? "";
   const repo = searchParams.get("repo")?.trim() ?? "";

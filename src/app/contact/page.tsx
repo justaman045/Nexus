@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { EnvelopeSimple, MapPin, Phone, PaperPlaneTilt, CircleNotch } from "@phosphor-icons/react";
-import { collection, addDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { getHomepageContent, defaultContent, HomepageContent } from "@/lib/cms";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -27,15 +25,22 @@ export default function ContactPage() {
         setIsSubmitting(true);
         setSubmitError(null);
         try {
-            await addDoc(collection(db, "contacts"), {
-                ...formData,
-                createdAt: new Date().toISOString(),
+            const res = await fetch("/api/contact", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(formData),
             });
+            if (!res.ok) {
+                const error = (await res.json().catch(() => ({}))) as { error?: string };
+                throw new Error(error.error || "Failed to send your message");
+            }
             setSent(true);
             setFormData({ name: "", email: "", subject: "", message: "" });
         } catch (err) {
             console.error("Error submitting contact form:", err);
-            setSubmitError("Failed to send your message. Please try again.");
+            setSubmitError(
+                err instanceof Error ? err.message : "Failed to send your message. Please try again."
+            );
         } finally {
             setIsSubmitting(false);
         }

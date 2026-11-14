@@ -1,48 +1,26 @@
 import { MetadataRoute } from 'next'
- 
+import { SITE_URL } from '@/lib/siteUrl'
+
+const ROUTES: Array<{
+  path: string
+  changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency']
+  priority: number
+}> = [
+  { path: '', changeFrequency: 'yearly', priority: 1 },
+  { path: '/about', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/products', changeFrequency: 'weekly', priority: 0.9 },
+  { path: '/contact', changeFrequency: 'yearly', priority: 0.5 },
+  { path: '/privacy', changeFrequency: 'yearly', priority: 0.4 },
+  { path: '/terms', changeFrequency: 'yearly', priority: 0.4 },
+  { path: '/cookies', changeFrequency: 'yearly', priority: 0.4 },
+]
+
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    {
-      url: 'https://nexus-software.com',
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 1,
-    },
-    {
-      url: 'https://nexus-software.com/about',
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.8,
-    },
-    {
-      url: 'https://nexus-software.com/products',
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 0.9,
-    },
-    {
-      url: 'https://nexus-software.com/contact',
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.5,
-    },
-    {
-      url: 'https://nexus-software.com/privacy',
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.4,
-    },
-    {
-      url: 'https://nexus-software.com/terms',
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.4,
-    },
-    {
-      url: 'https://nexus-software.com/cookies',
-      lastModified: new Date(),
-      changeFrequency: 'yearly',
-      priority: 0.4,
-    },
-  ]
+  const lastModified = new Date()
+  return ROUTES.map(({ path, changeFrequency, priority }) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified,
+    changeFrequency,
+    priority,
+  }))
 }

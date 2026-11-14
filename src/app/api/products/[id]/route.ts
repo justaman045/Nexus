@@ -1,108 +1,87 @@
-import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase";
-import { verifyIdToken, type FirebaseUserClaims } from "@/lib/server/verifyIdToken";
+import { verifyAdminRequest, tryAdminRequest } from "@/lib/server/adminAuth";
+import { jsonSafe } from "@/lib/server/jsonSafe";
+import { toPublicProduct } from "@/lib/server/productProjection";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
-/** Convert Firestore Timestamp values to ISO strings so the response is JSON-safe. */
-function jsonSafe(value: unknown): unknown {
-  if (value && typeof value === "object") {
-    if (Array.isArray(value)) return value.map(jsonSafe);
-    const maybeTs = value as { toDate?: () => Date };
-    if (typeof maybeTs.toDate === "function") return maybeTs.toDate().toISOString();
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = jsonSafe(v);
-    return out;
-  }
-  return value;
-}
+export const dynamic = "force-dynamic";
 
 type ProductStatus = "live" | "upcoming" | "draft" | "archived";
 
-interface ProductItem {
-  id: string;
-  [key: string]: unknown;
+const PRODUCT_STATUSES: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
+
+interface RouteContext {
+  params: Promise<{ id: string }>;
 }
-
-/** Verify admin auth from Authorization header. Returns { claims, error }. */
-async function assertAdminAuth(req: Request): Promise<{ claims?: FirebaseUserClaims; error?: { status: number; message: string } }> {
-  const authHeader = req.headers.get("authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (!token) {
-    return { error: { status: 401, message: "Unauthorized" } };
-  }
-
-  const getProjectId = (): string => {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
-    const parsed = JSON.parse(raw) as { project_id?: string };
-    if (!parsed.project_id) throw new Error("FIREBASE_SERVICE_ACCOUNT missing project_id");
-    return parsed.project_id;
-  };
-
-  const projectId = getProjectId();
-  const claims = await verifyIdToken(token, projectId);
-  const email = (claims.email || "").toLowerCase();
-  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (allowlist.length === 0 || !claims.emailVerified || !allowlist.includes(email)) {
-    return { error: { status: 403, message: "Forbidden" } };
-  }
-  return { claims };
-}
-
-export const revalidate = 60;
 
 export async function OPTIONS(req: Request) {
   const origin = req.headers.get("origin") || null;
   return corsOptionsResponse(origin);
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-
+export async function GET(req: Request, { params }: RouteContext) {
+  const origin = req.headers.get("origin") || null;
   try {
+    const { id } = await params;
+    const admin = await tryAdminRequest(req);
+
     const db = getDb();
     const docSnap = await db.collection("products").doc(id).get();
     if (!docSnap.exists) {
-      const origin = _req.headers.get("origin") || null;
       return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
-    const data = jsonSafe(docSnap.data()) as Record<string, unknown>;
-    const origin = _req.headers.get("origin") || null;
+
+    const data = (jsonSafe(docSnap.data()) as Record<string, unknown>) ?? {};
+    const status = (data.status as ProductStatus | undefined) ?? "draft";
+    // Drafts/archived products are invisible to the public catalogue.
+    if (!admin && status !== "live") {
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
+    }
+
+    const product: Record<string, unknown> = { ...data, id, status };
+    const output = admin ? product : toPublicProduct(product);
+
     return corsResponse(
+      output,
       {
-        id: docSnap.id,
-        status: (data.status as ProductStatus | undefined) ?? "draft",
-        ...data,
-      } as Record<string, unknown>,
-      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } },
+        headers: {
+          "Cache-Control": admin
+            ? "private, no-store, max-age=0"
+            : "public, s-maxage=60, stale-while-revalidate=120",
+        },
+      },
       origin
     );
   } catch (error) {
-    console.error("Error fetching product:", error);
-    const origin = _req.headers.get("origin") || null;
+    console.error("Error fetching product:", error instanceof Error ? error.message : error);
     return corsResponse({ error: "Failed to fetch product" }, { status: 500 }, origin);
   }
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
+export async function PATCH(req: Request, { params }: RouteContext) {
+  const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "products:update", limit: 60, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
 
   try {
-    const authResult = await assertAdminAuth(req);
+    const authResult = await verifyAdminRequest(req);
     if (authResult.error) {
-      const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: authResult.error.message }, { status: authResult.error.status }, origin);
+      return corsResponse(
+        { error: authResult.error.message },
+        { status: authResult.error.status },
+        origin
+      );
     }
 
+    const { id } = await params;
     const body = await req.json();
     const {
       name,
@@ -125,14 +104,14 @@ export async function PATCH(
       repoUrl,
       status,
       images,
+      github,
     } = body ?? {};
 
     // Normalize fields: accept either naming convention
-    const finalName = name !== undefined ? name.trim() : title !== undefined ? title.trim() : undefined;
+    const finalName = name !== undefined ? String(name).trim() : title !== undefined ? String(title).trim() : undefined;
     const finalDescription = description !== undefined ? description : shortDescription !== undefined ? shortDescription : undefined;
     const finalPrice = price !== undefined ? price : pricing !== undefined ? pricing : undefined;
     const finalCategory = category !== undefined ? category : undefined;
-    const finalImageUrl = imageUrl !== undefined ? imageUrl : undefined;
     const finalImages = images !== undefined ? images : undefined;
     const finalFeatures = features !== undefined ? features : techStack !== undefined ? techStack : undefined;
     const finalDemoUrl = demoUrl !== undefined ? demoUrl : websiteUrl !== undefined ? websiteUrl : undefined;
@@ -147,19 +126,28 @@ export async function PATCH(
         : undefined;
     const finalRepoUrl = repoUrl !== undefined ? repoUrl : undefined;
     const finalStatus =
-      status !== undefined && ["live", "upcoming", "draft", "archived"].includes(status) ? status : undefined;
+      typeof status === "string" && PRODUCT_STATUSES.includes(status as ProductStatus)
+        ? (status as ProductStatus)
+        : undefined;
 
     // Validate
-    if (finalName !== undefined && (!finalName || typeof finalName !== "string" || !finalName.trim())) {
-      const origin = req.headers.get("origin") || null;
+    if (status !== undefined && finalStatus === undefined) {
+      return corsResponse(
+        { error: `status must be one of: ${PRODUCT_STATUSES.join(", ")}` },
+        { status: 400 },
+        origin
+      );
+    }
+    if (github !== undefined && github !== null && (typeof github !== "object" || Array.isArray(github))) {
+      return corsResponse({ error: "github must be an object" }, { status: 400 }, origin);
+    }
+    if (finalName !== undefined && (!finalName || typeof finalName !== "string")) {
       return corsResponse({ error: "Product name (or title) is required" }, { status: 400 }, origin);
     }
-    if (finalPrice !== undefined && (typeof finalPrice !== "number" || finalPrice < 0)) {
-      const origin = req.headers.get("origin") || null;
+    if (finalPrice !== undefined && (typeof finalPrice !== "number" || !Number.isFinite(finalPrice) || finalPrice < 0)) {
       return corsResponse({ error: "Valid price (or pricing) is required" }, { status: 400 }, origin);
     }
-    if (finalCategory !== undefined && (!finalCategory || typeof finalCategory !== "string" || !finalCategory.trim())) {
-      const origin = req.headers.get("origin") || null;
+    if (finalCategory !== undefined && (!finalCategory || typeof finalCategory !== "string" || !String(finalCategory).trim())) {
       return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
 
@@ -167,7 +155,6 @@ export async function PATCH(
     const docRef = db.collection("products").doc(id);
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      const origin = req.headers.get("origin") || null;
       return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
 
@@ -175,20 +162,26 @@ export async function PATCH(
     if (finalName !== undefined) updateData.name = finalName.trim();
     if (finalDescription !== undefined) updateData.description = finalDescription;
     if (finalPrice !== undefined) updateData.price = finalPrice;
-    if (finalCategory !== undefined) updateData.category = finalCategory.trim();
-    if (finalImageUrl !== undefined) {
-      if (typeof finalImageUrl === "string" && finalImageUrl.trim() !== "") {
+    if (finalCategory !== undefined) updateData.category = String(finalCategory).trim();
+    if (imageUrl !== undefined) {
+      if (typeof imageUrl === "string" && imageUrl.trim() !== "") {
         try {
-          new URL(finalImageUrl);
-          updateData.imageUrl = finalImageUrl;
+          updateData.imageUrl = new URL(imageUrl).toString();
         } catch {
-          console.warn(`[products API] Invalid imageUrl: "${finalImageUrl}"`);
+          return corsResponse({ error: "Invalid imageUrl" }, { status: 400 }, origin);
         }
       } else {
         updateData.imageUrl = "";
       }
     }
-    if (finalImages !== undefined) updateData.images = finalImages;
+    if (finalImages !== undefined) {
+      if (!Array.isArray(finalImages)) {
+        return corsResponse({ error: "images must be an array of URLs" }, { status: 400 }, origin);
+      }
+      updateData.images = finalImages.filter(
+        (img): img is string => typeof img === "string" && img.trim() !== ""
+      );
+    }
     if (finalFeatures !== undefined) updateData.features = finalFeatures;
     if (finalDemoUrl !== undefined) updateData.demoUrl = finalDemoUrl;
     if (finalVersion !== undefined) updateData.version = finalVersion;
@@ -197,61 +190,48 @@ export async function PATCH(
     if (finalLongDescription !== undefined) updateData.longDescription = finalLongDescription;
     if (finalDescriptionType !== undefined) updateData.descriptionType = finalDescriptionType;
     if (finalRepoUrl !== undefined) updateData.repoUrl = finalRepoUrl;
+    if (github !== undefined) updateData.github = github;
     if (finalStatus !== undefined) updateData.status = finalStatus;
 
     const clean = Object.fromEntries(
       Object.entries(updateData).filter(([, v]) => v !== undefined)
     ) as Record<string, unknown>;
 
-    await docRef.update(clean);
+    if (Object.keys(clean).length > 0) {
+      await docRef.update(clean);
+    }
 
-    const updatedSnap = await docRef.get();
-    const origin = req.headers.get("origin") || null;
-    return corsResponse(
-      {
-        id: updatedSnap.id,
-        ...((jsonSafe(updatedSnap.data()) as Record<string, unknown>) ?? {}),
-      } as Record<string, unknown>,
-      {},
-      origin
-    );
+    return corsResponse({ id, ...clean }, {}, origin);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Error updating product:", message);
-    const origin = req.headers.get("origin") || null;
+    console.error("Error updating product:", error instanceof Error ? error.message : error);
     return corsResponse({ error: "Failed to update product" }, { status: 500 }, origin);
   }
 }
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-
+export async function DELETE(req: Request, { params }: RouteContext) {
+  const origin = req.headers.get("origin") || null;
   try {
-    const authResult = await assertAdminAuth(req);
+    const authResult = await verifyAdminRequest(req);
     if (authResult.error) {
-      const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: authResult.error.message }, { status: authResult.error.status }, origin);
+      return corsResponse(
+        { error: authResult.error.message },
+        { status: authResult.error.status },
+        origin
+      );
     }
 
+    const { id } = await params;
     const db = getDb();
     const docRef = db.collection("products").doc(id);
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      const origin = req.headers.get("origin") || null;
       return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
 
     await docRef.delete();
-
-    const origin = req.headers.get("origin") || null;
-    return corsResponse({ error: null, id, message: "Product deleted" }, {}, origin);
+    return corsResponse({ deleted: true, id }, {}, origin);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    console.error("Error deleting product:", message);
-    const origin = req.headers.get("origin") || null;
+    console.error("Error deleting product:", error instanceof Error ? error.message : error);
     return corsResponse({ error: "Failed to delete product" }, { status: 500 }, origin);
   }
 }

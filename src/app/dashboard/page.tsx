@@ -10,20 +10,17 @@ import {
   Clock, Key, Cube, Tag,
 } from "@phosphor-icons/react";
 import { getLicensesByEmail, License } from "@/lib/licenses";
-import { getProductById, Product } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import Link from "next/link";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
-type LicenseWithProduct = License & { product?: Product | null };
+type LicenseWithProduct = License;
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
 function timeAgo(ts: License["createdAt"]): string {
   try {
-    const d = ts && typeof (ts as { toDate?: () => Date }).toDate === "function"
-      ? (ts as { toDate: () => Date }).toDate()
-      : new Date(ts as unknown as string);
+    const d = new Date(ts);
     const diff = Date.now() - d.getTime();
     const days = Math.floor(diff / 86400000);
     if (days === 0) return "Today";
@@ -37,9 +34,7 @@ function timeAgo(ts: License["createdAt"]): string {
 
 function formatDate(ts: License["createdAt"]) {
   try {
-    const d = ts && typeof (ts as { toDate?: () => Date }).toDate === "function"
-      ? (ts as { toDate: () => Date }).toDate()
-      : new Date(ts as unknown as string);
+    const d = new Date(ts);
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   } catch { return "—"; }
 }
@@ -48,9 +43,7 @@ function oldestDate(licenses: LicenseWithProduct[]): string {
   let oldest = Infinity;
   for (const l of licenses) {
     try {
-      const d = l.createdAt && typeof (l.createdAt as { toDate?: () => Date }).toDate === "function"
-        ? (l.createdAt as { toDate: () => Date }).toDate()
-        : new Date(l.createdAt as unknown as string);
+      const d = new Date(l.createdAt);
       if (d.getTime() < oldest) oldest = d.getTime();
     } catch {}
   }
@@ -74,13 +67,11 @@ export default function CustomerDashboard() {
     async function fetchUserLicenses(email: string, expectedId: number) {
       setIsFetchingLicenses(true);
       try {
+        // The API joins product details (including the download link) for
+        // licences belonging to this account.
         const userLicenses = await getLicensesByEmail(email);
         if (expectedId !== requestId) return;
-        const withProducts = await Promise.all(
-          userLicenses.map(async (l) => ({ ...l, product: await getProductById(l.productId) }))
-        );
-        if (expectedId !== requestId) return;
-        setLicenses(withProducts);
+        setLicenses(userLicenses);
       } catch (e) {
         if (expectedId === requestId) console.error(e);
       } finally {

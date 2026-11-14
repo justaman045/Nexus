@@ -8,6 +8,7 @@ import { CurrencyProvider } from "@/components/CurrencyProvider";
 import { SiteSettingsProvider } from "@/contexts/SiteSettingsContext";
 import CookieBanner from "@/components/CookieBanner";
 import { Analytics } from '@vercel/analytics/next';
+import { SITE_URL } from "@/lib/siteUrl";
 
 export const metadata: Metadata = {
   title: {
@@ -15,11 +16,11 @@ export const metadata: Metadata = {
     default: "Nexus — Premium Software Suite",
   },
   description: "High-performance software tools built in-house and sold exclusively at Nexus. Engineered for creators, developers, and visionaries.",
-  metadataBase: new URL("https://nexusprods.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   openGraph: {
     title: "Nexus — Premium Software Suite",
     description: "High-performance software tools built in-house and sold exclusively at Nexus.",
-    url: "https://nexusprods.vercel.app",
+    url: SITE_URL,
     siteName: "Nexus",
     type: "website",
     locale: "en_US",

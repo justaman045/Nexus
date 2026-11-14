@@ -17,7 +17,7 @@ import {
   Sparkle,
 } from "@phosphor-icons/react";
 import { getOrders, Order } from "@/lib/orders";
-import { getProducts, Product } from "@/lib/products";
+import { getAdminProducts, Product } from "@/lib/products";
 import { fetchRates } from "@/lib/currency";
 
 const EASE = [0.16, 1, 0.3, 1] as [number, number, number, number];
@@ -150,7 +150,7 @@ export default function AdminDashboard() {
   const [rates, setRates] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    Promise.all([getOrders(), getProducts(), fetchRates()])
+    Promise.all([getOrders(), getAdminProducts(), fetchRates()])
       .then(([o, p, r]) => {
         setOrders(o);
         setProducts(p);

@@ -1,8 +1,10 @@
 rules_version = '2';
 
 // NOTE: money/fulfillment writes (orders, licenses, products.purchases) happen
-// server-side with the Admin SDK, which bypasses these rules. Keep in sync with
-// NEXT_PUBLIC_ADMIN_EMAILS (.env.example / Vercel).
+// server-side with the Admin SDK, which bypasses these rules. Customer reads of
+// orders/licenses also go through authenticated server routes (client reads are
+// denied below). Keep the admin email in sync with NEXT_PUBLIC_ADMIN_EMAILS
+// (.env.example / Vercel) and redeploy with `firebase deploy --only firestore`.
 service cloud.firestore {
   match /databases/{database}/documents {
     function isAdmin() {

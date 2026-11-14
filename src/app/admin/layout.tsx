@@ -74,7 +74,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     router.push("/admin/login");
   };
 
-  if (pathname === "/admin/login") return <>{children}</>;
+  // Login and verification pages render without the admin shell.
+  if (pathname === "/admin/login" || pathname === "/admin/verify") return <>{children}</>;
 
   if (loading) {
     return (

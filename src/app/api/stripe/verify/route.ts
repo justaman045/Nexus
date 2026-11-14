@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
+import { rateLimit } from "@/lib/server/rateLimit";
 import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export async function OPTIONS(req: Request) {
@@ -12,6 +12,15 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const origin = req.headers.get("origin") || null;
+
+  const limited = rateLimit(req, { name: "stripe:verify", limit: 30, windowMs: 60_000 });
+  if (!limited.ok) {
+    return corsResponse(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      origin
+    );
+  }
 
   if (!process.env.STRIPE_SECRET_KEY) {
     return corsResponse({ error: "Stripe not configured" }, { status: 500 }, origin);

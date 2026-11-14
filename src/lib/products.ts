@@ -1,5 +1,4 @@
-import { db } from "./firebase";
-import { collection, doc, setDoc, deleteDoc, addDoc } from "firebase/firestore";
+import { auth } from "./firebase";
 import type { GitHubSnapshot } from "./github";
 
 export interface Product {
@@ -11,24 +10,44 @@ export interface Product {
     features: string[];
     category: string;
     demoUrl?: string;
-    version?: string; // New
-    downloadUrl?: string; // New
-    documentationUrl?: string; // New
+    version?: string;
+    downloadUrl?: string;
+    documentationUrl?: string;
     longDescription?: string;
     descriptionType?: "plain" | "markdown" | "html";
     repoUrl?: string; // Synced GitHub repo URL
     github?: GitHubSnapshot; // Latest synced repo metadata
-    purchases: number; // New for sorting
-    createdAt: string; // New for sorting
-    status?: "live" | "upcoming" | "draft" | "archived"; // Product publication status
-    images?: string[]; // Multiple product images
+    purchases: number;
+    createdAt: string;
+    status?: "live" | "upcoming" | "draft" | "archived";
+    images?: string[];
 }
 
+// Empty by design: the catalogue is Firestore-driven. Kept as the documented
+// fallback for `getProducts()` when the API is unreachable.
 export const MOCK_PRODUCTS: Product[] = [];
 
 let cachedProducts: Product[] | null = null;
 let lastProductsFetch = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/** Clear the client-side product cache after an admin write. */
+export function clearProductsCache(): void {
+    cachedProducts = null;
+    lastProductsFetch = 0;
+}
+
+function sortProducts(products: Product[]): Product[] {
+    return [...products].sort((a, b) => {
+        const purchasesA = a.purchases || 0;
+        const purchasesB = b.purchases || 0;
+        if (purchasesB !== purchasesA) return purchasesB - purchasesA;
+
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateB - dateA;
+    });
+}
 
 export async function getProducts(): Promise<Product[]> {
     if (cachedProducts && Date.now() - lastProductsFetch < CACHE_TTL) {
@@ -39,29 +58,32 @@ export async function getProducts(): Promise<Product[]> {
         const res = await fetch("/api/products");
         if (!res.ok) throw new Error(`Products API returned ${res.status}`);
         const data = await res.json();
-        const products = (data.products || []) as Product[];
-
-        // Sort by purchases (desc), then by createdAt (newest first)
-        const sortedProducts = products.sort((a, b) => {
-            const purchasesA = a.purchases || 0;
-            const purchasesB = b.purchases || 0;
-
-            if (purchasesB !== purchasesA) {
-                return purchasesB - purchasesA; // Higher purchases first
-            }
-
-            const dateA = new Date(a.createdAt || 0).getTime();
-            const dateB = new Date(b.createdAt || 0).getTime();
-            return dateB - dateA; // Newer date first
-        });
-
-        cachedProducts = sortedProducts;
+        const products = sortProducts((data.products || []) as Product[]);
+        cachedProducts = products;
         lastProductsFetch = Date.now();
-        return sortedProducts;
+        return products;
     } catch (error) {
         console.error("Error fetching products:", error);
         return MOCK_PRODUCTS;
     }
+}
+
+/**
+ * Admin catalogue: includes drafts/archived products and paid fields
+ * (`downloadUrl`, `repoUrl`). Bypasses the public cache.
+ */
+export async function getAdminProducts(): Promise<Product[]> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated. Please sign in.");
+    const idToken = await user.getIdToken();
+
+    const res = await fetch("/api/products?status=all&sort=createdAt", {
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Products API returned ${res.status}`);
+    const data = await res.json();
+    return sortProducts((data.products || []) as Product[]);
 }
 
 export async function getProductById(id: string): Promise<Product | null> {
@@ -71,8 +93,7 @@ export async function getProductById(id: string): Promise<Product | null> {
             if (res.status === 404) return null;
             throw new Error(`Product API returned ${res.status}`);
         }
-        const data = await res.json();
-        const product = data as Product;
+        const product = (await res.json()) as Product;
         // Refresh the shared cache so a subsequent getProducts() isn't stale
         if (cachedProducts) {
             const idx = cachedProducts.findIndex((p) => p.id === id);
@@ -87,44 +108,24 @@ export async function getProductById(id: string): Promise<Product | null> {
     }
 }
 
-export async function addProduct(product: Omit<Product, "id" | "purchases" | "createdAt">) {
-    const newProduct = {
-        ...product,
-        purchases: 0,
-        createdAt: new Date().toISOString(),
-        status: product.status ?? "draft",
-    };
-    // Firestore Web SDK rejects `undefined` field values synchronously.
-    // Strip them before writing.
-    const clean = Object.fromEntries(
-        Object.entries(newProduct).filter(([, v]) => v !== undefined)
-    );
-    cachedProducts = null;
-    return await addDoc(collection(db, "products"), clean);
-}
+/** Seeds the sample catalogue + homepage content via the admin API. */
+export async function seedProducts(): Promise<void> {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated. Please sign in.");
+    const idToken = await user.getIdToken();
 
-export async function updateProduct(id: string, product: Partial<Product>) {
-    const docRef = doc(db, "products", id);
-    // Strip undefined fields — Firestore Web SDK rejects `undefined` values
-    // synchronously in setDoc.
-    const clean = Object.fromEntries(
-        Object.entries(product).filter(([, v]) => v !== undefined)
-    );
-    cachedProducts = null;
-    return await setDoc(docRef, clean, { merge: true });
-}
-
-export async function deleteProduct(id: string) {
-    cachedProducts = null;
-    return await deleteDoc(doc(db, "products", id));
-}
-
-// Function to seed initial data
-export async function seedProducts() {
-    for (const product of MOCK_PRODUCTS) {
-        // Use setDoc with specific ID to avoid duplicates on re-seed if IDs match
-        await setDoc(doc(db, "products", product.id), product);
+    const res = await fetch("/api/seed", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+        const error = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(error.error || "Failed to seed data");
     }
-    cachedProducts = null;
-    lastProductsFetch = 0;
+
+    clearProductsCache();
 }
