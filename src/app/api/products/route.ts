@@ -203,6 +203,9 @@ export async function POST(req: Request) {
       images,
     } = body ?? {};
 
+    // Log incoming image data for debugging
+    console.log(`[products API] Received product: name="${name || title}", imageUrl="${imageUrl}", images=${JSON.stringify(images)}, features=${JSON.stringify(features)}, techStack=${JSON.stringify(techStack)}`);
+
     // Normalize fields: accept either naming convention
     const finalName = (name || title || "").trim();
     const finalDescription = description || shortDescription || "";
@@ -269,6 +272,8 @@ export async function POST(req: Request) {
     const clean = Object.fromEntries(
       Object.entries(newProduct).filter(([, v]) => v !== undefined)
     ) as Record<string, unknown>;
+
+    console.log(`[products API] Storing product: name="${finalName}", imageUrl="${clean.imageUrl}", images=${JSON.stringify(clean.images)}`);
 
     const docRef = await db.collection("products").add(clean);
 
