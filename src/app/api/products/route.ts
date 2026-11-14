@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase";
 import { MOCK_PRODUCTS } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
-import { verifyIdToken } from "@/lib/server/verifyIdToken";
+import { verifyIdToken, type FirebaseUserClaims } from "@/lib/server/verifyIdToken";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 /** Convert Firestore Timestamp values to ISO strings so the response is JSON-safe. */
 function jsonSafe(value: unknown): unknown {
@@ -24,7 +25,41 @@ interface ProductItem {
   [key: string]: unknown;
 }
 
+/** Verify admin auth from Authorization header. Returns { claims, error }. */
+async function assertAdminAuth(req: Request): Promise<{ claims?: FirebaseUserClaims; error?: { status: number; message: string } }> {
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!token) {
+    return { error: { status: 401, message: "Unauthorized" } };
+  }
+
+  const getProjectId = (): string => {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
+    const parsed = JSON.parse(raw) as { project_id?: string };
+    if (!parsed.project_id) throw new Error("FIREBASE_SERVICE_ACCOUNT missing project_id");
+    return parsed.project_id;
+  };
+
+  const projectId = getProjectId();
+  const claims = await verifyIdToken(token, projectId);
+  const email = (claims.email || "").toLowerCase();
+  const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowlist.length === 0 || !claims.emailVerified || !allowlist.includes(email)) {
+    return { error: { status: 403, message: "Forbidden" } };
+  }
+  return { claims };
+}
+
 export const revalidate = 60;
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -50,13 +85,11 @@ export async function GET(req: Request) {
     products = MOCK_PRODUCTS.map((p) => ({ ...p, id: p.id } as ProductItem));
   }
 
-  // Normalise status: treat missing status as "draft"
   const normalised = products.map((p) => ({
     ...p,
     status: (p.status as ProductStatus | undefined) ?? "draft",
   })) as ProductItem[];
 
-  // Apply filters
   let filtered = normalised;
   if (statusFilter) {
     filtered = filtered.filter((p) => p.status === statusFilter);
@@ -65,7 +98,6 @@ export async function GET(req: Request) {
     filtered = filtered.filter((p) => String(p.category) === categoryFilter);
   }
 
-  // Apply sort
   if (sortBy === "purchases") {
     filtered = [...filtered].sort((a, b) => Number(b.purchases || 0) - Number(a.purchases || 0));
   } else if (sortBy === "createdAt") {
@@ -80,12 +112,10 @@ export async function GET(req: Request) {
     );
   }
 
-  // Apply limit
   if (limit > 0) {
     filtered = filtered.slice(0, limit);
   }
 
-  // Build categories list from products + CMS
   const allCategories = new Set<string>();
   normalised.forEach((p) => {
     if (p.category) allCategories.add(String(p.category));
@@ -100,7 +130,6 @@ export async function GET(req: Request) {
   }
   const categories = Array.from(allCategories).sort();
 
-  // Build summary counts across ALL products (not filtered)
   const summary = {
     live: normalised.filter((p) => p.status === "live").length,
     upcoming: normalised.filter((p) => p.status === "upcoming").length,
@@ -109,21 +138,24 @@ export async function GET(req: Request) {
     total: normalised.length,
   };
 
-  return NextResponse.json(
+  const origin = req.headers.get("origin") || null;
+  return corsResponse(
     { products: filtered, categories, summary },
-    { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } }
+    { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } },
+    origin
   );
 }
 
 export async function POST(req: Request) {
   try {
-    // Admin auth: verify Firebase ID token
     const authHeader = req.headers.get("authorization") || "";
     const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Unauthorized" }, { status: 401 }, origin);
     }
 
+    const { verifyIdToken: verifyIdTokenFn } = await import("@/lib/server/verifyIdToken");
     const getProjectId = (): string => {
       const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
       if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT env var is not set");
@@ -133,17 +165,17 @@ export async function POST(req: Request) {
     };
 
     const projectId = getProjectId();
-    const claims = await verifyIdToken(token, projectId);
+    const claims = await verifyIdTokenFn(token, projectId);
     const email = (claims.email || "").toLowerCase();
     const allowlist = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "")
       .split(",")
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
     if (allowlist.length === 0 || !claims.emailVerified || !allowlist.includes(email)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Forbidden" }, { status: 403 }, origin);
     }
 
-    // Validate body
     const body = await req.json();
     const {
       name,
@@ -163,13 +195,16 @@ export async function POST(req: Request) {
     } = body ?? {};
 
     if (!name || typeof name !== "string" || !name.trim()) {
-      return NextResponse.json({ error: "Product name is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Product name is required" }, { status: 400 }, origin);
     }
     if (typeof price !== "number" || price < 0) {
-      return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Valid price is required" }, { status: 400 }, origin);
     }
     if (!category || typeof category !== "string" || !category.trim()) {
-      return NextResponse.json({ error: "Category is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
     const validStatuses: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
     const productStatus = status && validStatuses.includes(status as ProductStatus) ? status : "draft";
@@ -197,24 +232,29 @@ export async function POST(req: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    // Strip undefined values (Firestore Web SDK rejects them)
     const clean = Object.fromEntries(
       Object.entries(newProduct).filter(([, v]) => v !== undefined)
     ) as Record<string, unknown>;
 
     const docRef = await db.collection("products").add(clean);
 
-    return NextResponse.json({
-      id: docRef.id,
-      ...clean,
-    });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse(
+      {
+        id: docRef.id,
+        ...clean,
+      },
+      {},
+      origin
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error creating product:", message);
-    const isDev = process.env.NODE_ENV === "development";
-    return NextResponse.json(
-      { error: "Failed to create product", ...(isDev ? { details: message } : {}) },
-      { status: 500 }
+    const origin = req.headers.get("origin") || null;
+    return corsResponse(
+      { error: "Failed to create product", ...(process.env.NODE_ENV === "development" ? { details: message } : {}) },
+      { status: 500 },
+      origin
     );
   }
 }

@@ -4,6 +4,7 @@ import { verifyRazorpaySignature } from "@/lib/razorpaySig";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 function cleanCustomerInfo(value: unknown) {
   if (!value || typeof value !== "object") return {};
@@ -15,20 +16,27 @@ function cleanCustomerInfo(value: unknown) {
   };
 }
 
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
+
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin") || null;
+
   try {
     const body = await req.json();
     const { orderId, paymentId, signature, customerInfo } = body ?? {};
 
     if (!orderId || !paymentId || !signature) {
-      return NextResponse.json({ error: "Missing payment details" }, { status: 400 });
+      return corsResponse({ error: "Missing payment details" }, { status: 400 }, origin);
     }
     if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      return NextResponse.json({ error: "Razorpay is not configured" }, { status: 500 });
+      return corsResponse({ error: "Razorpay is not configured" }, { status: 500 }, origin);
     }
 
     if (!verifyRazorpaySignature(orderId, paymentId, signature, process.env.RAZORPAY_KEY_SECRET)) {
-      return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 });
+      return corsResponse({ error: "Invalid payment signature" }, { status: 400 }, origin);
     }
 
     const razorpay = new Razorpay({
@@ -40,43 +48,38 @@ export async function POST(req: Request) {
     try {
       order = await razorpay.orders.fetch(orderId);
     } catch {
-      return NextResponse.json({ error: "Failed to load payment order" }, { status: 500 });
+      return corsResponse({ error: "Failed to load payment order" }, { status: 500 }, origin);
     }
 
-    // Confirm the payment was actually captured (not just authorized) and that
-    // the captured amount matches the order. Razorpay HMAC only proves the
-    // signature is genuine — it doesn't prove capture.
     let payment: { status?: string; amount?: string | number; currency?: string; order_id?: string };
     try {
       payment = await razorpay.payments.fetch(paymentId);
     } catch {
-      return NextResponse.json({ error: "Failed to load payment" }, { status: 500 });
+      return corsResponse({ error: "Failed to load payment" }, { status: 500 }, origin);
     }
     if (payment.status !== "captured") {
-      return NextResponse.json({ error: "Payment not captured" }, { status: 400 });
+      return corsResponse({ error: "Payment not captured" }, { status: 400 }, origin);
     }
     if (payment.order_id !== orderId) {
-      return NextResponse.json({ error: "Payment does not belong to this order" }, { status: 400 });
+      return corsResponse({ error: "Payment does not belong to this order" }, { status: 400 }, origin);
     }
     const chargedPaiseFromPayment =
       typeof payment.amount === "number" ? payment.amount : Number(payment.amount || 0);
     const orderPaise =
       typeof order.amount === "number" ? order.amount : Number(order.amount || 0);
     if (chargedPaiseFromPayment !== orderPaise) {
-      return NextResponse.json({ error: "Captured amount does not match order" }, { status: 400 });
+      return corsResponse({ error: "Captured amount does not match order" }, { status: 400 }, origin);
     }
 
-    // Read the real product id from notes, not from the (truncated) receipt.
     const productId = typeof order.notes?.productId === "string" ? order.notes.productId : "";
     if (!productId) {
-      return NextResponse.json({ error: "Order has no associated product" }, { status: 400 });
+      return corsResponse({ error: "Order has no associated product" }, { status: 400 }, origin);
     }
 
-    // Recompute the expected amount server-side from the product's USD price.
     const db = getDb();
     const productSnap = await db.collection("products").doc(productId).get();
     if (!productSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
     const product = productSnap.data() as { price?: number } | undefined;
     const usdPrice = typeof product?.price === "number" ? product.price : 0;
@@ -85,12 +88,11 @@ export async function POST(req: Request) {
     const chargedPaise = typeof order.amount === "number" ? order.amount : Number(order.amount || 0);
     const chargedCurrency = (order.currency || "INR").toUpperCase();
 
-    // Server-authoritative: reject if the charged amount/currency doesn't match
-    // what the product price dictates.
     if (chargedPaise !== expectedPaise || chargedCurrency !== "INR") {
-      return NextResponse.json(
+      return corsResponse(
         { error: "Charged amount does not match product price" },
-        { status: 400 }
+        { status: 400 },
+        origin
       );
     }
 
@@ -107,13 +109,17 @@ export async function POST(req: Request) {
       currency,
     });
 
-    return NextResponse.json({
-      verified: true,
-      orderId: result.orderId,
-      licenseKey: result.licenseKey,
-    });
+    return corsResponse(
+      {
+        verified: true,
+        orderId: result.orderId,
+        licenseKey: result.licenseKey,
+      },
+      {},
+      origin
+    );
   } catch (error) {
     console.error("Razorpay verify error:", error);
-    return NextResponse.json({ error: "Failed to verify payment" }, { status: 500 });
+    return corsResponse({ error: "Failed to verify payment" }, { status: 500 }, origin);
   }
 }

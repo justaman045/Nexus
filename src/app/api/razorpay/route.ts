@@ -3,22 +3,30 @@ import Razorpay from "razorpay";
 import { getDb } from "@/lib/server/firebase";
 import { usdToMinorUnits } from "@/lib/server/currency";
 import { getPaymentSettings } from "@/lib/paymentSettings";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin") || null;
+
   if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-    return NextResponse.json(
+    return corsResponse(
       { error: "Razorpay is not configured", code: "gateway_not_configured" },
-      { status: 503 }
+      { status: 503 },
+      origin
     );
   }
 
-  // Server-side gateway enforcement: only accept Razorpay orders when it is
-  // the active gateway in settings/payment.
   const settings = await getPaymentSettings().catch(() => ({ gateway: "razorpay" as const }));
   if (settings.gateway !== "razorpay") {
-    return NextResponse.json(
+    return corsResponse(
       { error: "Razorpay is not the active gateway", code: "gateway_not_configured" },
-      { status: 503 }
+      { status: 503 },
+      origin
     );
   }
 
@@ -26,21 +34,18 @@ export async function POST(req: Request) {
     const { productId } = await req.json();
 
     if (typeof productId !== "string" || !productId) {
-      return NextResponse.json({ error: "Missing productId" }, { status: 400 });
+      return corsResponse({ error: "Missing productId" }, { status: 400 }, origin);
     }
 
-    // Server-side price authority: look up the product and compute the
-    // chargeable INR amount from its USD price. The client's amount is
-    // never trusted.
     const db = getDb();
     const productSnap = await db.collection("products").doc(productId).get();
     if (!productSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
     const product = productSnap.data() as { price?: number; name?: string } | undefined;
     const usdPrice = typeof product?.price === "number" ? product.price : 0;
     if (usdPrice <= 0) {
-      return NextResponse.json({ error: "Product has no price" }, { status: 400 });
+      return corsResponse({ error: "Product has no price" }, { status: 400 }, origin);
     }
 
     const amountPaise = await usdToMinorUnits(usdPrice, "INR");
@@ -51,24 +56,25 @@ export async function POST(req: Request) {
     });
 
     const options = {
-      amount: amountPaise.toString(), // paise
+      amount: amountPaise.toString(),
       currency: "INR",
-      // Carry the real product id in notes (≤256 chars). receipt stays a
-      // short unique token — Date.now() plus a random suffix prevents
-      // collisions when two orders are created in the same millisecond.
       receipt: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       notes: { productId },
     };
 
     const response = await razorpay.orders.create(options);
 
-    return NextResponse.json({
-      id: response.id,
-      currency: response.currency,
-      amount: response.amount,
-    });
+    return corsResponse(
+      {
+        id: response.id,
+        currency: response.currency,
+        amount: response.amount,
+      },
+      {},
+      origin
+    );
   } catch (error) {
     console.error("Error creating Razorpay order:", error);
-    return NextResponse.json({ error: "Error creating order" }, { status: 500 });
+    return corsResponse({ error: "Error creating order" }, { status: 500 }, origin);
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGatewayReadiness } from "@/lib/server/gatewayConfig";
 import { verifyIdToken } from "@/lib/server/verifyIdToken";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 function getProjectId(): string {
     const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -20,29 +21,33 @@ const getAllowlist = (): string[] =>
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean);
 
+export async function OPTIONS(req: Request) {
+    const origin = req.headers.get("origin") || null;
+    return corsOptionsResponse(origin);
+}
+
 export async function GET(req: Request) {
+    const origin = req.headers.get("origin") || null;
+
     const header = req.headers.get("authorization") || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : "";
     if (!token) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        return corsResponse({ error: "Unauthorized" }, { status: 401 }, origin);
     }
 
     try {
         const claims = await verifyIdToken(token, getProjectId());
         const email = (claims.email || "").toLowerCase();
         const allowlist = getAllowlist();
-        // Fail closed: no allowlist configured means no admin access.
         if (allowlist.length === 0) {
-            return NextResponse.json({ error: "Admin allowlist not configured" }, { status: 503 });
+            return corsResponse({ error: "Admin allowlist not configured" }, { status: 503 }, origin);
         }
-        // Require a verified email — Firebase allows unverified sign-ins with
-        // arbitrary addresses, which would otherwise impersonate an admin.
         if (!email || !claims.emailVerified || !allowlist.includes(email)) {
-            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            return corsResponse({ error: "Forbidden" }, { status: 403 }, origin);
         }
-    } catch {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
-    return NextResponse.json(getGatewayReadiness());
+        return corsResponse(getGatewayReadiness(), {}, origin);
+    } catch {
+        return corsResponse({ error: "Forbidden" }, { status: 403 }, origin);
+    }
 }

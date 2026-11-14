@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase";
 import { verifyIdToken, type FirebaseUserClaims } from "@/lib/server/verifyIdToken";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 /** Convert Firestore Timestamp values to ISO strings so the response is JSON-safe. */
 function jsonSafe(value: unknown): unknown {
@@ -53,6 +54,11 @@ async function assertAdminAuth(req: Request): Promise<{ claims?: FirebaseUserCla
 
 export const revalidate = 60;
 
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -63,20 +69,24 @@ export async function GET(
     const db = getDb();
     const docSnap = await db.collection("products").doc(id).get();
     if (!docSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      const origin = _req.headers.get("origin") || null;
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
     const data = jsonSafe(docSnap.data()) as Record<string, unknown>;
-    return NextResponse.json(
+    const origin = _req.headers.get("origin") || null;
+    return corsResponse(
       {
         id: docSnap.id,
         status: (data.status as ProductStatus | undefined) ?? "draft",
         ...data,
       } as Record<string, unknown>,
-      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } }
+      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" } },
+      origin
     );
   } catch (error) {
     console.error("Error fetching product:", error);
-    return NextResponse.json({ error: "Failed to fetch product" }, { status: 500 });
+    const origin = _req.headers.get("origin") || null;
+    return corsResponse({ error: "Failed to fetch product" }, { status: 500 }, origin);
   }
 }
 
@@ -89,7 +99,8 @@ export async function PATCH(
   try {
     const authResult = await assertAdminAuth(req);
     if (authResult.error) {
-      return NextResponse.json({ error: authResult.error.message }, { status: authResult.error.status });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: authResult.error.message }, { status: authResult.error.status }, origin);
     }
 
     const body = await req.json();
@@ -112,13 +123,16 @@ export async function PATCH(
 
     // Validate
     if (name !== undefined && (!name || typeof name !== "string" || !name.trim())) {
-      return NextResponse.json({ error: "Product name is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Product name is required" }, { status: 400 }, origin);
     }
     if (price !== undefined && (typeof price !== "number" || price < 0)) {
-      return NextResponse.json({ error: "Valid price is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Valid price is required" }, { status: 400 }, origin);
     }
     if (category !== undefined && (!category || typeof category !== "string" || !category.trim())) {
-      return NextResponse.json({ error: "Category is required" }, { status: 400 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
 
     const validStatuses: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
@@ -128,7 +142,8 @@ export async function PATCH(
     const docRef = db.collection("products").doc(id);
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -152,7 +167,6 @@ export async function PATCH(
     if (repoUrl !== undefined) updateData.repoUrl = repoUrl;
     if (productStatus !== undefined) updateData.status = productStatus;
 
-    // Strip undefined values
     const clean = Object.fromEntries(
       Object.entries(updateData).filter(([, v]) => v !== undefined)
     ) as Record<string, unknown>;
@@ -160,14 +174,20 @@ export async function PATCH(
     await docRef.update(clean);
 
     const updatedSnap = await docRef.get();
-    return NextResponse.json({
-      id: updatedSnap.id,
-      ...((jsonSafe(updatedSnap.data()) as Record<string, unknown>) ?? {}),
-    } as Record<string, unknown>);
+    const origin = req.headers.get("origin") || null;
+    return corsResponse(
+      {
+        id: updatedSnap.id,
+        ...((jsonSafe(updatedSnap.data()) as Record<string, unknown>) ?? {}),
+      } as Record<string, unknown>,
+      {},
+      origin
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error updating product:", message);
-    return NextResponse.json({ error: "Failed to update product" }, { status: 500 });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse({ error: "Failed to update product" }, { status: 500 }, origin);
   }
 }
 
@@ -180,22 +200,26 @@ export async function DELETE(
   try {
     const authResult = await assertAdminAuth(req);
     if (authResult.error) {
-      return NextResponse.json({ error: authResult.error.message }, { status: authResult.error.status });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: authResult.error.message }, { status: authResult.error.status }, origin);
     }
 
     const db = getDb();
     const docRef = db.collection("products").doc(id);
     const docSnap = await docRef.get();
     if (!docSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
 
     await docRef.delete();
 
-    return NextResponse.json({ error: null, id, message: "Product deleted" });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse({ error: null, id, message: "Product deleted" }, {}, origin);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error deleting product:", message);
-    return NextResponse.json({ error: "Failed to delete product" }, { status: 500 });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse({ error: "Failed to delete product" }, { status: 500 }, origin);
   }
 }

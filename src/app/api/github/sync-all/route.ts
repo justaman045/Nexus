@@ -3,8 +3,14 @@ import { FieldValue } from "firebase-admin/firestore";
 import { parseRepoInput, mergeSyncedWithManual } from "@/lib/github";
 import { GitHubFetchError, fetchGitHubRepoServer } from "@/lib/server/githubFetch";
 import { getDb } from "@/lib/server/firebase";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 export const dynamic = "force-dynamic";
+
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
 
 async function syncAll() {
   const db = getDb();
@@ -18,69 +24,50 @@ async function syncAll() {
 
   for (const doc of snap.docs) {
     const data = doc.data();
-    const repoId = typeof data.repoUrl === "string" ? data.repoUrl : undefined;
-    if (!repoId) continue;
-    const parsed = parseRepoInput(repoId);
+    if (!data.repoUrl) continue;
+    const parsed = parseRepoInput(data.repoUrl);
     if (!parsed) continue;
 
-    const productId = doc.id;
-    const job = (async () => {
-      const label = `${parsed.owner}/${parsed.repo}`;
-      try {
-        const fresh = await fetchGitHubRepoServer(parsed.owner, parsed.repo, { includeReadme: true, force: true });
-        const merged = mergeSyncedWithManual({ ...data, id: productId }, fresh);
-
-        const payload: Record<string, unknown> = {};
-        for (const [key, value] of Object.entries(merged) as [string, unknown][]) {
-          if (key === "id" || key === "purchases" || key === "createdAt") continue;
-          if (value === undefined) {
-            // Clear fields the sync no longer produces (e.g. version without a release).
-            payload[key] = FieldValue.delete();
-          } else {
-            payload[key] = value;
-          }
+    jobs.push(
+      (async () => {
+        try {
+          const fresh = await fetchGitHubRepoServer(parsed.owner, parsed.repo);
+          const merged = mergeSyncedWithManual({ ...data, id: doc.id }, fresh);
+          await db.collection("products").doc(doc.id).update(merged);
+          results.synced.push(doc.id);
+        } catch (err) {
+          results.failed.push({
+            repo: data.repoUrl,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-        await db.collection("products").doc(productId).update(payload);
-        results.synced.push(label);
-      } catch (err) {
-        results.failed.push({
-          repo: label,
-          error: err instanceof GitHubFetchError ? err.message : "Unknown error",
-        });
-      }
-    })();
-    jobs.push(job);
+      })()
+    );
   }
 
-  await Promise.allSettled(jobs);
-  return { scanned: snap.size, syncedCount: results.synced.length, synced: results.synced, failed: results.failed };
+  await Promise.all(jobs);
+  return results;
 }
 
-async function run(req: NextRequest) {
-  // Guard: CRON_SECRET is required. Vercel Cron sends it as a Bearer token.
-  // Fail closed — if not configured, the endpoint is unreachable.
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
-    return NextResponse.json({ error: "Cron not configured" }, { status: 503 });
+export async function POST(req: NextRequest) {
+  const origin = req.headers.get("origin") || null;
+
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET) {
+    return corsResponse({ error: "CRON_SECRET not configured" }, { status: 503 }, origin);
   }
-  const auth = req.headers.get("authorization");
-  if (auth !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const cronSecret = req.headers.get("x-cron-secret") || req.headers.get("authorization") || "";
+  const provided = cronSecret.startsWith("Bearer ") ? cronSecret.slice(7) : cronSecret;
+  if (provided !== CRON_SECRET) {
+    return corsResponse({ error: "Forbidden" }, { status: 403 }, origin);
   }
 
   try {
-    const result = await syncAll();
-    return NextResponse.json(result);
-  } catch (err) {
-    console.error("GitHub sync-all failed:", err);
-    return NextResponse.json({ error: "Sync failed" }, { status: 500 });
+    const results = await syncAll();
+    return corsResponse(results, {}, origin);
+  } catch (error) {
+    console.error("GitHub sync-all error:", error);
+    return corsResponse({ error: "Sync failed" }, { status: 500 }, origin);
   }
-}
-
-export function GET(req: NextRequest) {
-  return run(req);
-}
-
-export function POST(req: NextRequest) {
-  return run(req);
 }

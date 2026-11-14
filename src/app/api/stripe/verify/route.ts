@@ -1,80 +1,89 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getDb } from "@/lib/server/firebase";
-import { usdToMinorUnits, gatewayMinorMultiplier } from "@/lib/server/currency";
+import { usdToMinorUnits } from "@/lib/server/currency";
 import { fulfillVerifiedOrder } from "@/lib/server/fulfill";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
+
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
 
 export async function POST(req: Request) {
+  const origin = req.headers.get("origin") || null;
+
   if (!process.env.STRIPE_SECRET_KEY) {
-    return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+    return corsResponse({ error: "Stripe not configured" }, { status: 500 }, origin);
   }
 
   const { session_id } = (await req.json().catch(() => ({}))) as { session_id?: string };
-  if (!session_id) return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+  if (!session_id) {
+    return corsResponse({ error: "Missing session_id" }, { status: 400 }, origin);
+  }
 
   try {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" });
     const session = await stripe.checkout.sessions.retrieve(session_id);
 
     if (session.payment_status !== "paid") {
-      return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
+      return corsResponse({ error: "Payment not completed" }, { status: 402 }, origin);
     }
 
     const metadata = (session.metadata ?? {}) as Record<string, string>;
     const productId = metadata.productId ?? "";
     if (!productId) {
-      return NextResponse.json({ error: "Session has no associated product" }, { status: 400 });
+      return corsResponse({ error: "Session has no associated product" }, { status: 400 }, origin);
     }
 
-    // Server-authoritative: recompute the expected amount from the product's
-    // USD price and reject if the charged amount doesn't match.
     const db = getDb();
     const productSnap = await db.collection("products").doc(productId).get();
     if (!productSnap.exists) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+      return corsResponse({ error: "Product not found" }, { status: 404 }, origin);
     }
     const product = productSnap.data() as { price?: number } | undefined;
     const usdPrice = typeof product?.price === "number" ? product.price : 0;
-    const expectedMinorUnits = await usdToMinorUnits(usdPrice, (session.currency ?? "usd").toUpperCase());
 
-    const chargedMinorUnits = Number(session.amount_total ?? 0);
-    if (chargedMinorUnits !== expectedMinorUnits) {
-      return NextResponse.json(
+    const unitAmount = await usdToMinorUnits(usdPrice, session.currency?.toUpperCase() ?? "USD");
+
+    // Verify the charged amount matches
+    const chargedAmount = session.amount_total ?? 0;
+    if (chargedAmount !== unitAmount) {
+      return corsResponse(
         { error: "Charged amount does not match product price" },
-        { status: 400 }
+        { status: 400 },
+        origin
       );
     }
 
-    const currency = (session.currency ?? "usd").toUpperCase();
-    // Convert minor units to major units using the currency's subunit multiplier
-    // (1 for zero-decimal currencies like JPY/KRW/VND, 100 for most others).
-    const amount = chargedMinorUnits / gatewayMinorMultiplier(currency);
+    const customerEmail = session.customer_details?.email ?? session.customer_email ?? "";
+    const customerName = session.customer_details?.name ?? "";
 
-    // Idempotency keyed on the Checkout Session id (identical in webhook and
-    // verify paths), not on payment_intent which can differ between them.
     const result = await fulfillVerifiedOrder({
       gateway: "stripe",
       orderId: session.id,
-      paymentId: typeof session.payment_intent === "string" ? session.payment_intent : `pi_${session.id}`,
+      paymentId: session.payment_intent as string,
       productId,
       customerInfo: {
-        name: metadata.customerName ?? session.customer_details?.name ?? undefined,
-        email: session.customer_email ?? metadata.customerEmail ?? undefined,
-        contact: metadata.customerContact ?? undefined,
+        name: customerName,
+        email: customerEmail,
+        contact: "",
       },
-      amount,
-      currency,
+      amount: unitAmount / 100,
+      currency: (session.currency ?? "usd").toUpperCase(),
     });
 
-    // Don't return customer PII or the raw metadata — only what the client needs.
-    return NextResponse.json({
-      orderId: session.id,
-      amount,
-      currency,
-      licenseKey: result.licenseKey,
-    });
+    return corsResponse(
+      {
+        verified: true,
+        orderId: result.orderId,
+        licenseKey: result.licenseKey,
+      },
+      {},
+      origin
+    );
   } catch (error) {
     console.error("Stripe verify error:", error);
-    return NextResponse.json({ error: "Failed to verify payment" }, { status: 500 });
+    return corsResponse({ error: "Failed to verify payment" }, { status: 500 }, origin);
   }
 }

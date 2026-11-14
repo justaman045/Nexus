@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/server/firebase";
 import { verifyIdToken, type FirebaseUserClaims } from "@/lib/server/verifyIdToken";
+import { corsResponse, corsOptionsResponse } from "@/lib/cors";
 
 /** Convert Firestore Timestamp values to ISO strings so the response is JSON-safe. */
 function jsonSafe(value: unknown): unknown {
@@ -47,11 +48,17 @@ async function assertAdminAuth(req: Request): Promise<{ claims?: FirebaseUserCla
 export const revalidate = 60;
 export const dynamic = "force-dynamic";
 
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get("origin") || null;
+  return corsOptionsResponse(origin);
+}
+
 export async function GET(req: Request) {
   try {
     const authResult = await assertAdminAuth(req);
     if (authResult.error) {
-      return NextResponse.json({ error: authResult.error.message }, { status: authResult.error.status });
+      const origin = req.headers.get("origin") || null;
+      return corsResponse({ error: authResult.error.message }, { status: authResult.error.status }, origin);
     }
 
     const db = getDb();
@@ -61,10 +68,12 @@ export async function GET(req: Request) {
       ...((jsonSafe(doc.data()) as Record<string, unknown>) ?? {}),
     })) as Record<string, unknown>[];
 
-    return NextResponse.json({ orders });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse({ orders }, {}, origin);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error fetching orders:", message);
-    return NextResponse.json({ error: "Failed to fetch orders" }, { status: 500 });
+    const origin = req.headers.get("origin") || null;
+    return corsResponse({ error: "Failed to fetch orders" }, { status: 500 }, origin);
   }
 }
