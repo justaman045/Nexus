@@ -151,7 +151,18 @@ export async function PATCH(
     if (description !== undefined) updateData.description = description;
     if (price !== undefined) updateData.price = price;
     if (category !== undefined) updateData.category = category.trim();
-    if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+    if (imageUrl !== undefined) {
+      if (typeof imageUrl === "string" && imageUrl.trim() !== "") {
+        try {
+          new URL(imageUrl);
+          updateData.imageUrl = imageUrl;
+        } catch {
+          console.warn(`[products API] Invalid imageUrl: "${imageUrl}"`);
+        }
+      } else {
+        updateData.imageUrl = "";
+      }
+    }
     if (features !== undefined) updateData.features = Array.isArray(features) ? features : [];
     if (demoUrl !== undefined) updateData.demoUrl = demoUrl;
     if (version !== undefined) updateData.version = version;

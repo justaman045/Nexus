@@ -209,13 +209,25 @@ export async function POST(req: Request) {
     const validStatuses: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
     const productStatus = status && validStatuses.includes(status as ProductStatus) ? status : "draft";
 
+    // Validate imageUrl if provided
+    let validatedImageUrl = "";
+    if (typeof imageUrl === "string" && imageUrl.trim() !== "") {
+      try {
+        new URL(imageUrl);
+        validatedImageUrl = imageUrl;
+      } catch {
+        // Invalid URL — store as empty
+        console.warn(`[products API] Invalid imageUrl: "${imageUrl}"`);
+      }
+    }
+
     const db = getDb();
     const newProduct: Record<string, unknown> = {
       name: name.trim(),
       description: typeof description === "string" ? description : "",
       price,
       category: category.trim(),
-      imageUrl: typeof imageUrl === "string" ? imageUrl : "",
+      imageUrl: validatedImageUrl,
       features: Array.isArray(features) ? features : [],
       demoUrl: typeof demoUrl === "string" ? demoUrl : undefined,
       version: typeof version === "string" ? version : undefined,
