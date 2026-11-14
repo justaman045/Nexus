@@ -106,37 +106,62 @@ export async function PATCH(
     const body = await req.json();
     const {
       name,
+      title,
       description,
+      shortDescription,
       price,
+      pricing,
       category,
       imageUrl,
-      features,
+      websiteUrl,
       demoUrl,
       version,
       downloadUrl,
       documentationUrl,
       longDescription,
       descriptionType,
+      features,
+      techStack,
       repoUrl,
       status,
+      images,
     } = body ?? {};
 
+    // Normalize fields: accept either naming convention
+    const finalName = name !== undefined ? name.trim() : title !== undefined ? title.trim() : undefined;
+    const finalDescription = description !== undefined ? description : shortDescription !== undefined ? shortDescription : undefined;
+    const finalPrice = price !== undefined ? price : pricing !== undefined ? pricing : undefined;
+    const finalCategory = category !== undefined ? category : undefined;
+    const finalImageUrl = imageUrl !== undefined ? imageUrl : undefined;
+    const finalImages = images !== undefined ? images : undefined;
+    const finalFeatures = features !== undefined ? features : techStack !== undefined ? techStack : undefined;
+    const finalDemoUrl = demoUrl !== undefined ? demoUrl : websiteUrl !== undefined ? websiteUrl : undefined;
+    const finalVersion = version !== undefined ? version : undefined;
+    const finalDownloadUrl = downloadUrl !== undefined ? downloadUrl : undefined;
+    const finalDocumentationUrl = documentationUrl !== undefined ? documentationUrl : undefined;
+    const finalLongDescription = longDescription !== undefined ? longDescription : undefined;
+    const finalDescriptionType =
+      descriptionType !== undefined &&
+      (descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html")
+        ? descriptionType
+        : undefined;
+    const finalRepoUrl = repoUrl !== undefined ? repoUrl : undefined;
+    const finalStatus =
+      status !== undefined && ["live", "upcoming", "draft", "archived"].includes(status) ? status : undefined;
+
     // Validate
-    if (name !== undefined && (!name || typeof name !== "string" || !name.trim())) {
+    if (finalName !== undefined && (!finalName || typeof finalName !== "string" || !finalName.trim())) {
       const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Product name is required" }, { status: 400 }, origin);
+      return corsResponse({ error: "Product name (or title) is required" }, { status: 400 }, origin);
     }
-    if (price !== undefined && (typeof price !== "number" || price < 0)) {
+    if (finalPrice !== undefined && (typeof finalPrice !== "number" || finalPrice < 0)) {
       const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Valid price is required" }, { status: 400 }, origin);
+      return corsResponse({ error: "Valid price (or pricing) is required" }, { status: 400 }, origin);
     }
-    if (category !== undefined && (!category || typeof category !== "string" || !category.trim())) {
+    if (finalCategory !== undefined && (!finalCategory || typeof finalCategory !== "string" || !finalCategory.trim())) {
       const origin = req.headers.get("origin") || null;
       return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
-
-    const validStatuses: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
-    const productStatus = status && validStatuses.includes(status as ProductStatus) ? status : undefined;
 
     const db = getDb();
     const docRef = db.collection("products").doc(id);
@@ -147,36 +172,32 @@ export async function PATCH(
     }
 
     const updateData: Record<string, unknown> = {};
-    if (name !== undefined) updateData.name = name.trim();
-    if (description !== undefined) updateData.description = description;
-    if (price !== undefined) updateData.price = price;
-    if (category !== undefined) updateData.category = category.trim();
-    if (imageUrl !== undefined) {
-      if (typeof imageUrl === "string" && imageUrl.trim() !== "") {
+    if (finalName !== undefined) updateData.name = finalName.trim();
+    if (finalDescription !== undefined) updateData.description = finalDescription;
+    if (finalPrice !== undefined) updateData.price = finalPrice;
+    if (finalCategory !== undefined) updateData.category = finalCategory.trim();
+    if (finalImageUrl !== undefined) {
+      if (typeof finalImageUrl === "string" && finalImageUrl.trim() !== "") {
         try {
-          new URL(imageUrl);
-          updateData.imageUrl = imageUrl;
+          new URL(finalImageUrl);
+          updateData.imageUrl = finalImageUrl;
         } catch {
-          console.warn(`[products API] Invalid imageUrl: "${imageUrl}"`);
+          console.warn(`[products API] Invalid imageUrl: "${finalImageUrl}"`);
         }
       } else {
         updateData.imageUrl = "";
       }
     }
-    if (features !== undefined) updateData.features = Array.isArray(features) ? features : [];
-    if (demoUrl !== undefined) updateData.demoUrl = demoUrl;
-    if (version !== undefined) updateData.version = version;
-    if (downloadUrl !== undefined) updateData.downloadUrl = downloadUrl;
-    if (documentationUrl !== undefined) updateData.documentationUrl = documentationUrl;
-    if (longDescription !== undefined) updateData.longDescription = longDescription;
-    if (descriptionType !== undefined) {
-      updateData.descriptionType =
-        descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html"
-          ? descriptionType
-          : "plain";
-    }
-    if (repoUrl !== undefined) updateData.repoUrl = repoUrl;
-    if (productStatus !== undefined) updateData.status = productStatus;
+    if (finalImages !== undefined) updateData.images = finalImages;
+    if (finalFeatures !== undefined) updateData.features = finalFeatures;
+    if (finalDemoUrl !== undefined) updateData.demoUrl = finalDemoUrl;
+    if (finalVersion !== undefined) updateData.version = finalVersion;
+    if (finalDownloadUrl !== undefined) updateData.downloadUrl = finalDownloadUrl;
+    if (finalDocumentationUrl !== undefined) updateData.documentationUrl = finalDocumentationUrl;
+    if (finalLongDescription !== undefined) updateData.longDescription = finalLongDescription;
+    if (finalDescriptionType !== undefined) updateData.descriptionType = finalDescriptionType;
+    if (finalRepoUrl !== undefined) updateData.repoUrl = finalRepoUrl;
+    if (finalStatus !== undefined) updateData.status = finalStatus;
 
     const clean = Object.fromEntries(
       Object.entries(updateData).filter(([, v]) => v !== undefined)

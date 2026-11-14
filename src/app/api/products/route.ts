@@ -177,37 +177,61 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+    // Support both schema conventions:
+    // Our app: name, price, imageUrl, demoUrl, description, features
+    // Other app: title, pricing, websiteUrl, shortDescription, techStack
     const {
       name,
+      title,
       description,
+      shortDescription,
       price,
+      pricing,
       category,
       imageUrl,
-      features,
+      websiteUrl,
       demoUrl,
       version,
       downloadUrl,
       documentationUrl,
       longDescription,
       descriptionType,
+      features,
+      techStack,
       repoUrl,
       status,
+      images,
     } = body ?? {};
 
-    if (!name || typeof name !== "string" || !name.trim()) {
+    // Normalize fields: accept either naming convention
+    const finalName = (name || title || "").trim();
+    const finalDescription = description || shortDescription || "";
+    const finalPrice = typeof price === "number" ? price : typeof pricing === "number" ? pricing : undefined;
+    const finalCategory = category || "";
+    const finalImageUrl = imageUrl || "";
+    const finalImages = Array.isArray(images) ? images : [];
+    const finalFeatures = Array.isArray(features) ? features : Array.isArray(techStack) ? techStack : [];
+    const finalDemoUrl = demoUrl || websiteUrl || undefined;
+    const finalVersion = version || undefined;
+    const finalDownloadUrl = downloadUrl || undefined;
+    const finalDocumentationUrl = documentationUrl || undefined;
+    const finalLongDescription = longDescription || "";
+    const finalDescriptionType = descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html" ? descriptionType : "plain";
+    const finalRepoUrl = repoUrl || undefined;
+    const finalStatus = status && ["live", "upcoming", "draft", "archived"].includes(status) ? status : "draft";
+
+    if (!finalName) {
       const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Product name is required" }, { status: 400 }, origin);
+      return corsResponse({ error: "Product name (or title) is required" }, { status: 400 }, origin);
     }
-    if (typeof price !== "number" || price < 0) {
+    if (typeof finalPrice !== "number" || finalPrice < 0) {
       const origin = req.headers.get("origin") || null;
-      return corsResponse({ error: "Valid price is required" }, { status: 400 }, origin);
+      return corsResponse({ error: "Valid price (or pricing) is required" }, { status: 400 }, origin);
     }
-    if (!category || typeof category !== "string" || !category.trim()) {
+    if (!finalCategory) {
       const origin = req.headers.get("origin") || null;
       return corsResponse({ error: "Category is required" }, { status: 400 }, origin);
     }
-    const validStatuses: ProductStatus[] = ["live", "upcoming", "draft", "archived"];
-    const productStatus = status && validStatuses.includes(status as ProductStatus) ? status : "draft";
 
     // Validate imageUrl if provided
     let validatedImageUrl = "";
@@ -223,23 +247,21 @@ export async function POST(req: Request) {
 
     const db = getDb();
     const newProduct: Record<string, unknown> = {
-      name: name.trim(),
-      description: typeof description === "string" ? description : "",
-      price,
-      category: category.trim(),
-      imageUrl: validatedImageUrl,
-      features: Array.isArray(features) ? features : [],
-      demoUrl: typeof demoUrl === "string" ? demoUrl : undefined,
-      version: typeof version === "string" ? version : undefined,
-      downloadUrl: typeof downloadUrl === "string" ? downloadUrl : undefined,
-      documentationUrl: typeof documentationUrl === "string" ? documentationUrl : undefined,
-      longDescription: typeof longDescription === "string" ? longDescription : "",
-      descriptionType:
-        descriptionType === "plain" || descriptionType === "markdown" || descriptionType === "html"
-          ? descriptionType
-          : "plain",
-      repoUrl: typeof repoUrl === "string" ? repoUrl : undefined,
-      status: productStatus,
+      name: finalName,
+      description: finalDescription,
+      price: finalPrice,
+      category: finalCategory.trim(),
+      imageUrl: finalImageUrl,
+      images: finalImages,
+      features: finalFeatures,
+      demoUrl: finalDemoUrl,
+      version: finalVersion,
+      downloadUrl: finalDownloadUrl,
+      documentationUrl: finalDocumentationUrl || undefined,
+      longDescription: finalLongDescription,
+      descriptionType: finalDescriptionType,
+      repoUrl: finalRepoUrl,
+      status: finalStatus,
       purchases: 0,
       createdAt: new Date().toISOString(),
     };

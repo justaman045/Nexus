@@ -332,7 +332,7 @@ describe("POST /api/products", () => {
         const body = await res.json();
 
         expect(res.status).toBe(400);
-        expect(body.error).toBe("Product name is required");
+        expect(body.error).toBe("Product name (or title) is required");
     });
 
     it("rejects negative price", async () => {
@@ -351,7 +351,7 @@ describe("POST /api/products", () => {
         const body = await res.json();
 
         expect(res.status).toBe(400);
-        expect(body.error).toBe("Valid price is required");
+        expect(body.error).toBe("Valid price (or pricing) is required");
     });
 
     it("rejects missing category", async () => {
