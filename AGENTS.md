@@ -6,24 +6,54 @@ Next.js 16 (App Router) software marketplace: Firebase web SDK for client reads;
 
 ```bash
 npm install        # npm only — never pnpm (package-lock.json is the only lockfile; Vercel detects lockfiles)
-npm run dev        # http://localhost:3000
+npm run dev        # Next dev server
 npm run build      # prod build (Next typechecks during build)
 npm run lint       # ESLint 9 flat config (eslint.config.mjs)
 npm test           # Vitest — runs src/**/*.test.ts (pass a path to vitest for a single file)
+npm run test:rules # Firestore emulator suite for the SHARED firestore.rules (both apps' collections)
 npx tsc --noEmit   # standalone typecheck
-npx vitest run src/lib/currency.test.ts   # single test file
 ```
 
-CI (`.github/workflows/ci.yml`): `npm ci → lint → tsc → test → build` on push/PR to `main` (Node 22). Run locally in that order before pushing.
+CI (`.github/workflows/ci.yml`): `npm ci → lint → tsc → test → build` on push/PR to `main` (Node 22). Run locally in that order before pushing. `npm run test:rules` is **not** in CI — run it manually before every `firebase deploy --only firestore`.
 
 ## Setup
 
-Node 22 — CI (`.github/workflows/ci.yml`) runs on Node 22; use it locally for `tsc`, `build`, and `test`.
+Node 22 — CI runs on Node 22; use it locally for `tsc`, `build`, and `test`.
 
 1. Copy `.env.example` → `.env.local`. `.env.example` is the authoritative variable list; all other `.env*` files are gitignored.
-2. `FIREBASE_SERVICE_ACCOUNT` (JSON service account) is required — server routes throw at request time without it.
-3. Install `firebase-tools` globally to deploy Firestore rules: `firebase deploy --only firestore` (manual; editing `firestore.rules` does nothing until deployed).
+2. `FIREBASE_SERVICE_ACCOUNT` (JSON service account) is required — `getDb()` throws at request time without it.
+3. Install `firebase-tools` globally to deploy Firestore rules: `firebase deploy --only firestore` (manual; editing `firestore.rules` does nothing until deployed). `.firebaserc` pins the target project to `company-24267`.
 4. `vercel` CLI is a devDependency: `npx vercel` to deploy/add env, `npx vercel ls --prod` to list production deployments. Git push auto-deploys Production. `vercel env add` overwrites existing values.
+
+## Shared Firebase project — SaaSWaitlist
+
+Nexus (`nexusprods.vercel.app`, Vercel project `company`) and SaaSWaitlist (`projektnotify.vercel.app`, Vercel project `saas-waitlist`) share the **same** Firebase project `company-24267`. The other app's repo lives at `~/Development/SaaSWaitlist`.
+
+- **`firestore.rules` is shared and a deploy replaces the whole file.** It must keep BOTH apps' collections: Nexus owns `products`, `content`, `settings`, `contacts`, `orders`, `licenses`; SaaSWaitlist owns `projects`, `waitlist`, `taxonomy`, `requests`. Never deploy a Nexus-only rules file — the catch-all `match /{document=**} { allow read, write: if false; }` would silently deny the other app's collections and break its landing page, waitlist signup, dropdowns and request submission.
+- **`isAdmin()` is a cross-app contract.** The email list in `firestore.rules` must be the union of both apps' admins, and stay in sync with `NEXT_PUBLIC_ADMIN_EMAILS` in both repos. The cross-app product sync authenticates as `developerlife69@gmail.com`.
+- **Cross-origin calls:** the SaaSWaitlist admin mirrors products into Nexus. `src/lib/cors.ts` `DEFAULT_ORIGINS` lists both production origins; `ALLOWED_ORIGINS` (Vercel env) extends it for preview deployments. Without the origin in the list the browser blocks the response — the API still returns 200 server-side, so this looks like an empty result rather than an error.
+- **Mirrored products:** SaaSWaitlist `projects` are mirrored into Nexus `products` via `POST /api/products` using the companion schema (`title`/`pricing`/`websiteUrl`/`techStack`); Nexus `POST /api/products` accepts both schemas. A mirrored product is only `live` when the source project is `active`.
+- **A mirrored product with a free-text pricing is free.** The companion maps a non-numeric `pricing` ("Free", "Freemium") to `price: 0`. Nexus renders that as "Free" (`isFreeProduct()` in `src/lib/currency.ts`) and replaces the acquire button with a notice — the payment routes reject a zero amount, so a checkout for a free product can only ever fail.
+- `userProfiles` / `users` are orphaned legacy collections — neither app references them; the catch-all deny is correct, do not add rules for them.
+
+## Firestore rules — testing and deployment
+
+`firestore.rules` is shared with the companion app, so a rules change can break either app. Three layers of checking:
+
+```bash
+npm run test:rules                              # emulator suite, 80 assertions over BOTH apps' collections
+node scripts/verify-deployed-rules.mjs          # proves the rules SERVING production match the file
+node scripts/production-state.mjs               # collection counts, orphaned licences, mirror links
+firebase deploy --only firestore                # deploys to company-24267 (.firebaserc pins the target)
+```
+
+- `scripts/verify-firestore-rules.mjs` runs against the local Firestore emulator (`firebase.json` → emulators on ports 8288/9299, project `demo-nexus`). It seeds an admin and a customer in the Auth emulator and asserts every read/write path of both apps. Note: `firebase emulators:exec` loads the script with `require()`, so the entry point is the `.cjs` shim.
+- The emulator's REST `PATCH` **replaces** the document (no merge) and rejects `updateMask` — partial updates have to resend the whole document. The suite treats HTTP 400 as a malformed request (a failed test), never as a denial.
+- `scripts/verify-deployed-rules.mjs` signs in as the admin through a real ID token and re-runs the key assertions against the live project. It creates and deletes its own probe documents.
+- `scripts/production-state.mjs` prints the live collection counts, the auth users, any licence whose product no longer exists, and whether each companion project is correctly linked to its mirrored product. It also deletes leftover probe documents.
+- `scripts/restore-catalogue.mts` restores the catalogue data (the deleted "Finance Control" product, the companion mirror, and the `settings/site` document). It is idempotent — safe to re-run.
+
+Always re-run `npm run test:rules` after editing `firestore.rules`, and keep `~/Development/SaaSWaitlist/firestore.rules` byte-identical to this repo's copy (a rules deploy replaces the whole file).
 
 ## Architecture
 
@@ -31,8 +61,8 @@ Node 22 — CI (`.github/workflows/ci.yml`) runs on Node 22; use it locally for 
 - Server-only code lives in `src/lib/server/` — never import `firebase-admin` into `"use client"` code. `getDb()` (`src/lib/server/firebase.ts`) initializes the Admin app from `FIREBASE_SERVICE_ACCOUNT` and throws if unset.
 - `firebase-admin/auth` is unusable in route handlers (`ERR_REQUIRE_ESM` under Turbopack). Verify Firebase ID tokens with `src/lib/server/verifyIdToken.ts` (manual RS256 vs Google JWKS, 1 h key cache with refetch on `kid` miss, `AbortSignal.timeout`), then check `claims.emailVerified === true` and the email against `NEXT_PUBLIC_ADMIN_EMAILS`. Client admin routes send `Authorization: Bearer <await user.getIdToken()>` (see `admin/settings/page.tsx`).
 - `src/lib/firebase.ts` uses `?? "not-configured-..."` placeholder defaults so CI builds with no secrets — never add bare `process.env.X!` reads in client code.
-- Theme: HSL CSS vars in `src/app/globals.css` (`:root`/`.dark`) consumed by `tailwind.config.ts` via `@config` — a token change touches both files.
-- Split domains: `metadataBase` = `https://nexusprods.vercel.app` (`layout.tsx`); sitemap/robots use `https://nexus-software.com`. Admin layout forces dark theme.
+- Theme: HSL CSS vars in `src/app/globals.css` (`:root`/`.dark`) consumed by `tailwind.config.ts` — a token change touches both files.
+- `metadataBase`, `sitemap.ts`, and `robots.ts` all derive from `src/lib/siteUrl.ts` (`NEXT_PUBLIC_SITE_URL`, default `https://nexusprods.vercel.app`). `nexusprods.vercel.app` appears only in `src/lib/cors.ts` allowed origins, not in sitemap/robots. Admin layout (`src/app/admin/layout.tsx`) forces dark theme.
 
 ## Payments — security conventions (must follow for any payment touchpoint)
 
@@ -49,7 +79,7 @@ Node 22 — CI (`.github/workflows/ci.yml`) runs on Node 22; use it locally for 
 
 | Data | TTL | Notes |
 |---|---|---|
-| Products | 5 min | cleared on write in `products.ts`; `getProducts()` falls back to hardcoded `MOCK_PRODUCTS` when Firestore is empty/unreachable |
+| Products | 5 min | cleared on write in `products.ts`; `getProducts()` falls back to `MOCK_PRODUCTS`, which is **empty by design** — an unreachable API yields an empty catalogue, not a sample one |
 | Orders | 5 min | read-only |
 | Site settings / CMS | 5 min | cleared on write; deep-merged over hardcoded `defaultSiteSettings` |
 | Payment settings | 30 s | controls gateway + multi-currency |
@@ -59,7 +89,7 @@ Node 22 — CI (`.github/workflows/ci.yml`) runs on Node 22; use it locally for 
 
 ## Gotchas
 
-- `firestore.rules` `isAdmin()` hardcodes `developerlife69@gmail.com` + `email_verified == true`; client-side `isAdminEmail()` (`src/lib/admin.ts`) reads `NEXT_PUBLIC_ADMIN_EMAILS` (empty = any signed-in user is admin, legacy). Keep both in sync.
+- `firestore.rules` `isAdmin()` hardcodes `developerlife69@gmail.com` + `email_verified == true`; client-side `isAdminEmail()` (`src/lib/admin.ts`) reads `NEXT_PUBLIC_ADMIN_EMAILS` (empty = any signed-in user is admin, legacy). Keep both in sync — and keep the rules list the union across both apps (see *Shared Firebase project*).
 - `orders`/`licenses` are admin-read-only (`allow read: if isAdmin()`); client writes are denied (`allow write: if false`). Don't add client reads of these collections — scope lookups via server routes.
 - Keep only `package-lock.json` — a stray `pnpm-lock.yaml` makes Vercel switch package managers and break the deploy.
 - Next bundles its own postcss; `package.json` `overrides` pins it past a CVE — if Next's pin bumps, re-run `npm audit` and reconcile.

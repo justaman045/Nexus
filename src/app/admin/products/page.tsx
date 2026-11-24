@@ -18,6 +18,7 @@ import {
 import { Product, getAdminProducts, clearProductsCache } from "@/lib/products";
 import { getHomepageContent } from "@/lib/cms";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { isFreeProduct } from "@/lib/currency";
 import { auth } from "@/lib/firebase";
 import { Glass, inputCls, labelCls, tableHeaderCls, LoadingSkeleton, StatusBadge } from "../_components/shared";
 import {
@@ -408,7 +409,9 @@ export default function AdminProducts() {
                     </span>
                   </td>
                   <td className="px-8 py-5">
-                    <span className="text-white text-[14px] font-bold">{formatCurrency(product.price)}</span>
+                    <span className="text-white text-[14px] font-bold">
+                      {isFreeProduct(product.price) ? "Free" : formatCurrency(product.price)}
+                    </span>
                   </td>
                   <td className="px-8 py-5">
                     <StatusBadge status={product.status ?? "draft"} glow />

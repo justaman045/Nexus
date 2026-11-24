@@ -61,7 +61,14 @@ export async function POST(req: Request) {
     }
     const usdPrice = typeof product.price === "number" ? product.price : 0;
     if (!Number.isFinite(usdPrice) || usdPrice <= 0) {
-      return corsResponse({ error: "Product has no price" }, { status: 400 }, origin);
+      // A zero-priced product is free — there is nothing to charge for. The
+      // client renders "Free" and never opens a checkout for it; this guard
+      // makes sure a hand-crafted request cannot create a zero-amount order.
+      return corsResponse(
+        { error: "This product is free — no payment is required." },
+        { status: 400 },
+        origin
+      );
     }
 
     const amountPaise = await usdToMinorUnits(usdPrice, "INR");

@@ -23,7 +23,7 @@ import {
 import { getProductById, Product } from "@/lib/products";
 import { ProductImage } from "@/components/ProductImage";
 import { getPaymentSettings, PaymentGateway } from "@/lib/paymentSettings";
-import { CURRENCIES, formatPrice } from "@/lib/currency";
+import { CURRENCIES, formatPrice, isFreeProduct } from "@/lib/currency";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
@@ -501,7 +501,8 @@ export default function ProductDetailsPage() {
         );
     }
 
-    const displayPrice = formatCurrency(product.price);
+    const isFree = isFreeProduct(product.price);
+    const displayPrice = isFree ? "Free" : formatCurrency(product.price);
 
     return (
         <div className="min-h-screen bg-background">
@@ -610,7 +611,9 @@ export default function ProductDetailsPage() {
                         )}
 
                         <div className="py-4 border-y border-border flex items-center justify-between">
-                            <span className="text-[13px] font-semibold text-muted-foreground uppercase tracking-[0.1em]">License Price</span>
+                            <span className="text-[13px] font-semibold text-muted-foreground uppercase tracking-[0.1em]">
+                                {isFree ? "Price" : "License Price"}
+                            </span>
                             <span className="text-[28px] font-mono font-bold text-foreground tracking-tight">
                                 {displayPrice}
                             </span>
@@ -631,12 +634,22 @@ export default function ProductDetailsPage() {
                         )}
 
                         <div className="space-y-3 pt-2">
-                            <button
-                                onClick={() => setShowPaymentModal(true)}
-                                className="w-full btn-apple btn-apple-primary py-4 text-[14px] font-semibold"
-                            >
-                                {siteSettings.productDetail.acquireLabel}
-                            </button>
+                            {isFree ? (
+                                // A free product has nothing to charge for — the payment
+                                // routes reject a zero amount, so the acquire button is
+                                // replaced by a notice instead of a checkout that can
+                                // only fail.
+                                <div className="w-full btn-apple bg-secondary/50 border border-border text-muted-foreground py-4 text-[14px] font-semibold text-center cursor-default">
+                                    Free — no license key required
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setShowPaymentModal(true)}
+                                    className="w-full btn-apple btn-apple-primary py-4 text-[14px] font-semibold"
+                                >
+                                    {siteSettings.productDetail.acquireLabel}
+                                </button>
+                            )}
                             {product.demoUrl ? (
                                 <Link
                                     href={product.demoUrl}
@@ -662,11 +675,14 @@ export default function ProductDetailsPage() {
                             )}
                         </div>
 
-                        {/* Gateway indicator */}
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Powered by {gateway === "stripe" ? "Stripe" : "Razorpay"}
-                        </div>
+                        {/* Gateway indicator — a free product never goes through a
+                            payment gateway, so the badge would be misleading. */}
+                        {!isFree && (
+                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Powered by {gateway === "stripe" ? "Stripe" : "Razorpay"}
+                            </div>
+                        )}
 
                         {product.documentationUrl && (
                             <Link

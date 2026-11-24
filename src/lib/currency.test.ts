@@ -4,6 +4,7 @@ import {
   CURRENCIES,
   formatPrice,
   gatewayMinorMultiplier,
+  isFreeProduct,
   COUNTRY_CURRENCY,
 } from "./currency";
 
@@ -49,6 +50,30 @@ describe("formatPrice", () => {
 
   it("keeps negative/zero inputs sane", () => {
     expect(formatPrice(0, CURRENCIES.USD)).toBe("$0");
+  });
+});
+
+describe("isFreeProduct", () => {
+  it("treats a zero price as free", () => {
+    // Mirrored companion products with a free-text pricing ("Free",
+    // "Freemium") are mirrored with price 0.
+    expect(isFreeProduct(0)).toBe(true);
+  });
+
+  it("treats a missing or malformed price as free", () => {
+    expect(isFreeProduct(undefined)).toBe(true);
+    expect(isFreeProduct(null)).toBe(true);
+    expect(isFreeProduct(Number.NaN)).toBe(true);
+    expect(isFreeProduct(Number.POSITIVE_INFINITY)).toBe(true);
+  });
+
+  it("treats a negative price as free", () => {
+    expect(isFreeProduct(-1)).toBe(true);
+  });
+
+  it("treats a real price as paid", () => {
+    expect(isFreeProduct(0.01)).toBe(false);
+    expect(isFreeProduct(29)).toBe(false);
   });
 });
 

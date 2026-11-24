@@ -11,8 +11,10 @@ const DEFAULT_ORIGINS = [
   "http://127.0.0.1:3000",
   "http://127.0.0.1:3001",
   "https://nexusprods.vercel.app",
-  "https://nexus-software.com",
-  "https://www.nexus-software.com",
+  "https://www.nexusprods.vercel.app",
+  // The SaaS Waitlist admin dashboard mirrors products here.
+  "https://projektnotify.vercel.app",
+  "https://www.projektnotify.vercel.app",
 ];
 
 function allowedOrigins(): string[] {

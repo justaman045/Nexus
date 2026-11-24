@@ -63,10 +63,3 @@ export async function usdToMinorUnits(usdAmount: number, currency: string): Prom
   if (!rate) throw new Error(`Unsupported currency: ${currency}`);
   return Math.round(usdAmount * rate * gatewayMinorMultiplier(currency));
 }
-
-/** Convert a USD major-unit amount to the target currency's major units
- *  (e.g. rupees for INR), rounded to the currency's display precision. */
-export async function usdToMajorUnits(usdAmount: number, currency: string): Promise<number> {
-  const minor = await usdToMinorUnits(usdAmount, currency);
-  return minor / gatewayMinorMultiplier(currency);
-}

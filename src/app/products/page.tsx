@@ -7,6 +7,7 @@ import { MagnifyingGlass, ArrowRight, CircleNotch, Star } from "@phosphor-icons/
 import type { Product } from "@/lib/products";
 import { ProductImage } from "@/components/ProductImage";
 import { useCurrency } from "@/components/CurrencyProvider";
+import { isFreeProduct } from "@/lib/currency";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
 
 interface ProductsResponse {
@@ -183,7 +184,7 @@ function ProductCard({ product, index }: { product: Product; index: number }) {
                     {/* Price pill */}
                     <div className="absolute top-4 right-4">
                         <span className="px-3 py-1 rounded-full text-[13px] font-bold backdrop-blur-md bg-background/70 border border-border text-foreground">
-                            {formatCurrency(product.price)}
+                            {isFreeProduct(product.price) ? "Free" : formatCurrency(product.price)}
                         </span>
                     </div>
                     {/* Hover overlay */}

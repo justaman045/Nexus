@@ -53,9 +53,3 @@ export function rateLimit(req: Request, { name, limit, windowMs }: RateLimitOpti
   bucket.count += 1;
   return { ok: true, retryAfter: 0 };
 }
-
-/** Test helper — reset all buckets between cases. */
-export function resetRateLimits(): void {
-  buckets.clear();
-  lastSweep = 0;
-}

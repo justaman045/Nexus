@@ -65,6 +65,19 @@ export const CURRENCIES: Record<string, CurrencyInfo> = {
 
 export const USD: CurrencyInfo = CURRENCIES.USD;
 
+/**
+ * Whether a product is free.
+ *
+ * A price of zero means there is nothing to pay for. This happens for products
+ * mirrored from the companion app whose pricing is free text ("Free",
+ * "Freemium") — the companion maps those to `price: 0`. Such a product must
+ * not open a checkout: the payment routes reject a zero amount, so the button
+ * would only ever produce an error.
+ */
+export function isFreeProduct(price: number | undefined | null): boolean {
+  return typeof price !== "number" || !Number.isFinite(price) || price <= 0;
+}
+
 // Format a converted price with the right symbol and decimals
 export function formatPrice(amount: number, currency: CurrencyInfo): string {
   const rounded = currency.decimals === 0 ? Math.round(amount) : Number(amount.toFixed(currency.decimals));

@@ -11,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 import { getHomepageContent, HomepageContent, defaultContent } from "@/lib/cms";
 import { getProducts, Product } from "@/lib/products";
+import { isFreeProduct } from "@/lib/currency";
 import { ProductImage } from "@/components/ProductImage";
 import { useCurrency } from "@/components/CurrencyProvider";
 import { useSiteSettings } from "@/contexts/SiteSettingsContext";
@@ -405,7 +406,9 @@ export default function Home() {
                           <h3 className="text-[16px] font-bold tracking-tight text-foreground">{product.name}</h3>
                           <p className="text-[13px] mt-0.5 line-clamp-1 text-muted-foreground">{product.description}</p>
                         </div>
-                        <span className="text-[18px] font-bold font-mono gradient-text shrink-0 ml-3">{formatCurrency(product.price)}</span>
+                        <span className="text-[18px] font-bold font-mono gradient-text shrink-0 ml-3">
+                            {isFreeProduct(product.price) ? "Free" : formatCurrency(product.price)}
+                        </span>
                       </div>
                     </div>
                   </Link>
