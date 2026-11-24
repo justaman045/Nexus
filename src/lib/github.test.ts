@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   humanizeRepoName,
+  mapRepoToProduct,
   mergeSyncedWithManual,
   parseRepoInput,
+  rewriteReadmeUrls,
 } from "./github";
 import type { GitHubRepoData, GitHubSnapshot } from "./github";
 
@@ -56,6 +58,58 @@ describe("humanizeRepoName", () => {
   it("title-cases dashed repos", () => {
     expect(humanizeRepoName("preview-master")).toBe("Preview Master");
     expect(humanizeRepoName("react-dom")).toBe("React Dom");
+  });
+});
+
+describe("rewriteReadmeUrls", () => {
+  const rewrite = (readme: string) =>
+    rewriteReadmeUrls(readme, "justaman045", "WealthSync", "master");
+
+  it("points relative HTML images at the repository's raw content", () => {
+    expect(rewrite('<img src="assets/app_logo.png" width="96"/>')).toBe(
+      '<img src="https://raw.githubusercontent.com/justaman045/WealthSync/master/assets/app_logo.png" width="96"/>'
+    );
+  });
+
+  it("points relative HTML links at the GitHub page", () => {
+    expect(rewrite('<a href="CONTRIBUTING.md">Contributing</a>')).toBe(
+      '<a href="https://github.com/justaman045/WealthSync/blob/master/CONTRIBUTING.md">Contributing</a>'
+    );
+  });
+
+  it("points relative markdown images at the raw content", () => {
+    expect(rewrite("![logo](./assets/logo.png)")).toBe(
+      "![logo](https://raw.githubusercontent.com/justaman045/WealthSync/master/assets/logo.png)"
+    );
+  });
+
+  it("points relative markdown links at the GitHub page", () => {
+    expect(rewrite("See [CONTRIBUTING.md](CONTRIBUTING.md)")).toBe(
+      "See [CONTRIBUTING.md](https://github.com/justaman045/WealthSync/blob/master/CONTRIBUTING.md)"
+    );
+  });
+
+  it("leaves absolute URLs, anchors and protocols alone", () => {
+    const readme =
+      '<img src="https://example.com/a.png"/><a href="#section">x</a><a href="mailto:a@b.c">m</a>';
+    expect(rewrite(readme)).toBe(readme);
+  });
+
+  it("does not rewrite a markdown image as a link", () => {
+    expect(rewrite("![a](b.png)")).toContain("raw.githubusercontent.com");
+    expect(rewrite("![a](b.png)")).not.toContain("blob/master");
+  });
+});
+
+describe("mapRepoToProduct", () => {
+  it("rewrites the relative URLs in the readme", () => {
+    const out = mapRepoToProduct({
+      ...baseData,
+      readme: '<img src="assets/logo.png"/>',
+    });
+    expect(out.longDescription).toBe(
+      '<img src="https://raw.githubusercontent.com/vercel/next.js/canary/assets/logo.png"/>'
+    );
   });
 });
 

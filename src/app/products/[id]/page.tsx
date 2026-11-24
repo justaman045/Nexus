@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { Components } from "react-markdown";
 import {
     CaretLeft,
@@ -201,6 +203,26 @@ function sanitizeHtml(html: string): string {
     return out;
 }
 
+/**
+ * Sanitizer schema for markdown that may contain raw HTML.
+ *
+ * A README pulled from GitHub routinely contains raw HTML — centred logos,
+ * badge images, `<p align="center">` blocks. Without `rehype-raw` that HTML
+ * is escaped and shown to the visitor as literal markup, which looks broken.
+ *
+ * `rehype-raw` parses the embedded HTML, and `rehype-sanitize` then removes
+ * anything unsafe (scripts, event handlers, `javascript:` URLs) before it is
+ * rendered. The default schema is kept and only the harmless presentational
+ * `align` attribute is added back.
+ */
+const markdownSchema = {
+    ...defaultSchema,
+    attributes: {
+        ...defaultSchema.attributes,
+        "*": [...(defaultSchema.attributes?.["*"] ?? []), "align"],
+    },
+};
+
 function ProductDescription({ content, type }: { content: string; type: "plain" | "markdown" | "html" }) {
     if (type === "html") {
         return (
@@ -213,7 +235,11 @@ function ProductDescription({ content, type }: { content: string; type: "plain" 
 
     if (type === "markdown") {
         return (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema]]}
+                components={markdownComponents}
+            >
                 {content}
             </ReactMarkdown>
         );

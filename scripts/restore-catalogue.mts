@@ -161,7 +161,7 @@ async function restoreDeletedProduct() {
         version: repo.release?.tagName?.replace(/^v/i, "") ?? "",
         downloadUrl,
         documentationUrl: repo.htmlUrl,
-        longDescription: repo.readme ?? repo.description ?? "",
+        longDescription: mapped.longDescription ?? repo.readme ?? repo.description ?? "",
         descriptionType: repo.readme ? "markdown" : "plain",
         repoUrl: repo.htmlUrl,
         github: snapshot,

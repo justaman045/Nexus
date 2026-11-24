@@ -128,12 +128,82 @@ export function humanizeRepoName(repo: string): string {
     .join(" ");
 }
 
+/** True when a URL points somewhere inside the repository. */
+function isRelativeRepoUrl(url: string): boolean {
+  if (!url) return false;
+  // Anchors stay on the page.
+  if (url.startsWith("#")) return false;
+  // Protocol-relative and absolute URLs are already resolved.
+  if (url.startsWith("//")) return false;
+  // Anything with a scheme (`https:`, `mailto:`, `data:`) is absolute.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return false;
+  return true;
+}
+
+/** Strips the `./` or leading `/` from a repository-relative path. */
+function repoPath(url: string): string {
+  return url.replace(/^\.\//, "").replace(/^\//, "");
+}
+
+/**
+ * Rewrites the relative URLs in a README so they still resolve when the
+ * README is rendered on this site.
+ *
+ * A README that is shown on another site cannot resolve its relative paths:
+ * `assets/logo.png` would be looked up on *this* site and 404. Images are
+ * pointed at the repository's raw content and links at the GitHub page.
+ */
+export function rewriteReadmeUrls(readme: string, owner: string, repo: string, branch: string): string {
+  if (!readme) return readme;
+  const raw = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/`;
+  const blob = `https://github.com/${owner}/${repo}/blob/${branch}/`;
+
+  // Markdown images: ![alt](path "title") — the path may carry a title.
+  let out = readme.replace(
+    /!\[([^\]]*)\]\(\s*([^)\s]+)((?:\s+"[^"]*")?)\s*\)/g,
+    (match, alt: string, url: string, title: string) => {
+      if (!isRelativeRepoUrl(url)) return match;
+      return `![${alt}](${raw}${repoPath(url)}${title})`;
+    }
+  );
+
+  // Markdown links: [text](path "title")
+  out = out.replace(
+    /(^|[^!])\[([^\]]*)\]\(\s*([^)\s]+)((?:\s+"[^"]*")?)\s*\)/g,
+    (match, prefix: string, text: string, url: string, title: string) => {
+      if (!isRelativeRepoUrl(url)) return match;
+      return `${prefix}[${text}](${blob}${repoPath(url)}${title})`;
+    }
+  );
+
+  // Raw HTML: src="path" (an asset) and href="path" (a page in the repo).
+  out = out.replace(
+    /(\ssrc=)(["'])([^"']+)\2/g,
+    (match, prefix: string, quote: string, url: string) => {
+      if (!isRelativeRepoUrl(url)) return match;
+      return `${prefix}${quote}${raw}${repoPath(url)}${quote}`;
+    }
+  );
+  out = out.replace(
+    /(\shref=)(["'])([^"']+)\2/g,
+    (match, prefix: string, quote: string, url: string) => {
+      if (!isRelativeRepoUrl(url)) return match;
+      return `${prefix}${quote}${blob}${repoPath(url)}${quote}`;
+    }
+  );
+
+  return out;
+}
+
 /** Maps a fetched repo payload onto editable product fields (fresh values). */
 export function mapRepoToProduct(data: GitHubRepoData): Partial<MappedProductField> {
+  const readme = data.readme
+    ? rewriteReadmeUrls(data.readme, data.owner, data.repo, data.defaultBranch)
+    : "";
   return {
     name: humanizeRepoName(data.repo),
     description: data.description || "",
-    longDescription: data.readme || data.description || "",
+    longDescription: readme || data.description || "",
     descriptionType: data.readme ? "markdown" : "plain",
     version: data.release ? data.release.tagName.replace(/^v/i, "") : undefined,
     imageUrl: data.avatarUrl,
