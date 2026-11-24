@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:rules": "firebase emulators:exec --only auth,firestore --project demo-nexus \"node scripts/verify-firestore-rules.cjs\""
+    "test:rules": "firebase emulators:exec --only auth,firestore --project demo-nexus \"node scripts/verify-firestore-rules.cjs\"",
+    "verify:rules:live": "node scripts/verify-deployed-rules.mjs",
+    "verify:writes": "node scripts/verify-public-writes.mjs",
+    "verify:state": "node scripts/production-state.mjs",
+    "verify:cleanup": "node scripts/cleanup-verification-data.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
